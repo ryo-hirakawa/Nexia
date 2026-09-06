@@ -36,6 +36,12 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+
+  // API ルートはページ用のログイン画面へリダイレクトしない（各自で 401 を返す）
+  if (pathname.startsWith("/api/")) {
+    return response;
+  }
+
   const isPublic = PUBLIC_PATHS.some(
     (p) => pathname === p || pathname.startsWith(p + "/"),
   );
