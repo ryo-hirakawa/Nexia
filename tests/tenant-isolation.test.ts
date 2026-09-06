@@ -210,6 +210,31 @@ describe("テナント隔離（RLS）", () => {
     expect(castSeen).toEqual([]);
   });
 
+  test("月初セットアップ（monthly_setups）も他社からは見えない・書けない", async () => {
+    const a = await signIn(emailA);
+    const b = await signIn(emailB);
+
+    const { data: ms, error: msErr } = await a
+      .from("monthly_setups")
+      .insert({ store_id: storeAId, year_month: "2026-09-01" })
+      .select("id")
+      .single();
+    expect(msErr).toBeNull();
+    expect(ms?.id).toBeTruthy();
+
+    const { data: seen } = await b
+      .from("monthly_setups")
+      .select("id")
+      .eq("store_id", storeAId);
+    expect(seen).toEqual([]);
+
+    const { data: ins, error: insErr } = await b
+      .from("monthly_setups")
+      .insert({ store_id: storeAId, year_month: "2026-10-01" })
+      .select("id");
+    expect(insErr !== null || (ins ?? []).length === 0).toBe(true);
+  });
+
   test("一般ユーザーは自分を管理者に昇格できない", async () => {
     const a = await signIn(emailA);
     const { error } = await a

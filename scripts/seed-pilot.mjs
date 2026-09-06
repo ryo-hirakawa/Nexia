@@ -37,7 +37,7 @@ if (!client) {
   console.log("クライアント既存:", client.name, client.id);
 }
 
-const { data: store } = await admin
+let { data: store } = await admin
   .from("stores")
   .select("id, name")
   .eq("client_id", client.id)
@@ -56,9 +56,26 @@ if (!store) {
     .select("id, name")
     .single();
   if (error) throw error;
+  store = data;
   console.log("店舗作成:", data.name, data.id);
 } else {
   console.log("店舗既存:", store.name, store.id);
+}
+
+// 流動費の費目マスタ（バー版プリセット）
+const VITEMS = ["消耗品", "送り（タクシー）", "販促・広告", "衛生・清掃", "通信", "雑費"];
+const { count } = await admin
+  .from("variable_cost_items")
+  .select("*", { count: "exact", head: true })
+  .eq("store_id", store.id);
+if (!count) {
+  const { error } = await admin.from("variable_cost_items").insert(
+    VITEMS.map((name, i) => ({ store_id: store.id, name, sort_order: i })),
+  );
+  if (error) throw error;
+  console.log("流動費 費目マスタ作成:", VITEMS.length, "件");
+} else {
+  console.log("流動費 費目マスタ既存:", count, "件");
 }
 
 console.log("done");

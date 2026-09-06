@@ -20,6 +20,7 @@ export default async function AppLayout({
   ];
   if (canWrite) {
     nav.push({ href: "/input", label: "日次入力" });
+    nav.push({ href: "/setup", label: "月初セットアップ" });
     nav.push({ href: "/stores", label: "店舗" });
   }
   if (membership.isPlatformAdmin) {

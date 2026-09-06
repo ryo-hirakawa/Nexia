@@ -5,6 +5,15 @@ import { createClient } from "@/lib/supabase/server";
 import { requireMembership } from "@/lib/auth";
 import { isValidDateStr } from "@/lib/daily";
 import { PAYMENT_METHODS } from "@/lib/bar-preset";
+import { latestRecordedDate } from "@/lib/monthly-server";
+
+/** 記録がある一番新しい営業日（フォーム送信後に「最新日」へ切り替えるため）。 */
+export async function getLatestRecordedDate(
+  storeId: string,
+): Promise<string | null> {
+  await requireMembership();
+  return latestRecordedDate(storeId);
+}
 
 export type SavePayload = {
   storeId: string;

@@ -12,7 +12,11 @@ import {
   type PaymentKey,
 } from "@/lib/bar-preset";
 import { yen, type DailyRecordForm } from "@/lib/daily";
-import { saveDailyRecord, type SavePayload } from "@/app/(app)/input/actions";
+import {
+  saveDailyRecord,
+  getLatestRecordedDate,
+  type SavePayload,
+} from "@/app/(app)/input/actions";
 
 const num = (s: string) => {
   const n = parseInt(String(s).replace(/[^0-9]/g, ""), 10);
@@ -27,15 +31,31 @@ type CastRow = { name: string; nom: string; tbl: string; comp: string; back: str
 export default function DailyForm({
   initial,
   storeName,
+  storeId,
   prevDate,
   nextDate,
+  fixedLines,
+  staffLines,
+  staffPerDay,
+  variableItems,
+  setupMonth,
+  setupExists,
 }: {
   initial: DailyRecordForm;
   storeName: string;
+  storeId: string;
   prevDate: string;
   nextDate: string;
+  fixedLines: { item: string; category: string; perDay: number }[];
+  staffLines: { name: string; perDay: number }[];
+  staffPerDay: number;
+  variableItems: string[];
+  setupMonth: string;
+  setupExists: boolean;
 }) {
   const router = useRouter();
+  const varOptions = variableItems.length ? variableItems : [...VARIABLE_COST_ITEMS];
+  const fixedPerDayTotal = fixedLines.reduce((s, l) => s + l.perDay, 0);
 
   const [weather, setWeather] = useState(initial.weather ?? "");
   const [note, setNote] = useState(initial.note ?? "");
@@ -69,7 +89,7 @@ export default function DailyForm({
     const rows = initial.costs
       .filter((c) => c.cost_class === "variable")
       .map((c) => ({ item: c.item, amount: str(c.amount), note: c.note ?? "" }));
-    return rows.length ? rows : [{ item: VARIABLE_COST_ITEMS[0], amount: "", note: "" }];
+    return rows.length ? rows : [{ item: varOptions[0], amount: "", note: "" }];
   });
 
   const [recvIn, setRecvIn] = useState<RecvRow[]>(() =>
@@ -201,7 +221,13 @@ export default function DailyForm({
       }
       setStatus(res.status);
       setSavedMsg(res.status === "confirmed" ? "確定しました" : "下書きを保存しました");
-      router.refresh();
+      // 記録がある一番新しい営業日へ切り替える（過去日を編集していた場合）
+      const latest = await getLatestRecordedDate(storeId);
+      if (latest && latest !== initial.businessDate) {
+        router.push(`/input/${storeId}/${latest}`);
+      } else {
+        router.refresh();
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存に失敗しました");
     } finally {
@@ -448,9 +474,45 @@ export default function DailyForm({
         <Row label="人件費 キャストバック（上のキャスト別から自動）" muted>
           <span className="font-mono text-sm tabular-nums text-zinc-400">{yen(castBackSum)}</span>
         </Row>
-        <p className="mt-1 text-xs text-zinc-400">
-          月給スタッフ（日割り）・固定費は、月初セットアップ（M2′）から自動で人件費・経費に反映されます。
-        </p>
+        <Row label="人件費 月給スタッフ（日割り・月初セットアップから）" muted>
+          <span className="font-mono text-sm tabular-nums text-zinc-400">{yen(staffPerDay)} / 日</span>
+        </Row>
+      </Section>
+
+      {/* 固定費・月給（日割り・参考） */}
+      <Section title="固定費・月給スタッフ（日割り・自動）">
+        {!setupExists ? (
+          <p className="text-sm text-zinc-500">
+            {setupMonth} の月初セットアップが未設定です。{" "}
+            <a href={`/setup/${storeId}/${setupMonth}`} className="font-medium underline">
+              月初セットアップを開く
+            </a>
+          </p>
+        ) : (
+          <>
+            {fixedLines.map((l, i) => (
+              <Row key={"f" + i} label={`固定費 ${l.item}`} muted>
+                <span className="font-mono text-sm tabular-nums text-zinc-400">{yen(l.perDay)} / 日</span>
+              </Row>
+            ))}
+            <Row label="固定費 日割り合計" muted>
+              <span className="font-mono text-sm tabular-nums text-zinc-500">{yen(fixedPerDayTotal)} / 日</span>
+            </Row>
+            {staffLines.map((l, i) => (
+              <Row key={"s" + i} label={`月給スタッフ ${l.name}（人件費）`} muted>
+                <span className="font-mono text-sm tabular-nums text-zinc-400">{yen(l.perDay)} / 日</span>
+              </Row>
+            ))}
+            <p className="mt-2 text-xs text-zinc-400">
+              日次では入力しません。ダッシュボードの経費・FL率・営業利益に自動で反映されます。
+              金額は{" "}
+              <a href={`/setup/${storeId}/${setupMonth}`} className="underline">
+                月初セットアップ
+              </a>{" "}
+              で変更します。
+            </p>
+          </>
+        )}
       </Section>
 
       {/* 流動費 */}
@@ -467,7 +529,7 @@ export default function DailyForm({
                 }}
                 className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
               >
-                {VARIABLE_COST_ITEMS.map((v) => (
+                {varOptions.map((v) => (
                   <option key={v} value={v}>{v}</option>
                 ))}
               </select>
@@ -505,7 +567,7 @@ export default function DailyForm({
         </div>
         <button
           type="button"
-          onClick={() => setVars([...vars, { item: VARIABLE_COST_ITEMS[0], amount: "", note: "" }])}
+          onClick={() => setVars([...vars, { item: varOptions[0], amount: "", note: "" }])}
           className="mt-2 rounded-md border border-zinc-300 px-3 py-1 text-sm dark:border-zinc-700"
         >
           ＋ 明細を追加
