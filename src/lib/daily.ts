@@ -11,6 +11,22 @@ export type CostLine = {
   note?: string | null;
 };
 
+export type ReceivableDirection = "incurred" | "collected";
+export type ReceivableEntry = {
+  direction: ReceivableDirection;
+  counterparty: string | null;
+  amount: number;
+  note?: string | null;
+};
+
+export type CastSale = {
+  cast_name: string;
+  nominate_amount: number; // 本指名
+  table_amount: number; // 場内
+  companion_amount: number; // 同伴
+  back_amount: number; // バック
+};
+
 export type DailyRecordForm = {
   id: string | null;
   storeId: string;
@@ -24,6 +40,10 @@ export type DailyRecordForm = {
   categories: CategoryLine[];
   payments: Record<PaymentKey, number>;
   costs: CostLine[];
+  receivables: ReceivableEntry[];
+  casts: CastSale[];
+  /** この営業日より前の売掛残高（店舗の累計） */
+  priorReceivableBalance: number;
   confirmedAt: string | null;
   updatedAt: string | null;
 };

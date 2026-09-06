@@ -190,6 +190,24 @@ describe("テナント隔離（RLS）", () => {
       .insert({ store_id: storeAId, business_date: "2026-09-02", total_sales: 1 })
       .select("id");
     expect(insErr !== null || (ins ?? []).length === 0).toBe(true);
+
+    // A社ユーザーは子テーブル（キャスト別売上・売掛）を書ける
+    const rid = created!.id;
+    const { error: castErr } = await a
+      .from("daily_cast_sales")
+      .insert({ daily_record_id: rid, cast_name: "あや", nominate_amount: 30000, back_amount: 9000 });
+    expect(castErr).toBeNull();
+    const { error: recvErr } = await a
+      .from("daily_receivable_entries")
+      .insert({ daily_record_id: rid, direction: "incurred", amount: 12000 });
+    expect(recvErr).toBeNull();
+
+    // B社ユーザーからは見えない
+    const { data: castSeen } = await b
+      .from("daily_cast_sales")
+      .select("id")
+      .eq("daily_record_id", rid);
+    expect(castSeen).toEqual([]);
   });
 
   test("一般ユーザーは自分を管理者に昇格できない", async () => {

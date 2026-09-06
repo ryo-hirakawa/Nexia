@@ -21,6 +21,8 @@ const num = (s: string) => {
 const str = (n: number) => (n ? String(n) : "");
 
 type VarRow = { item: string; amount: string; note: string };
+type RecvRow = { cp: string; amt: string };
+type CastRow = { name: string; nom: string; tbl: string; comp: string; back: string };
 
 export default function DailyForm({
   initial,
@@ -70,6 +72,26 @@ export default function DailyForm({
     return rows.length ? rows : [{ item: VARIABLE_COST_ITEMS[0], amount: "", note: "" }];
   });
 
+  const [recvIn, setRecvIn] = useState<RecvRow[]>(() =>
+    initial.receivables
+      .filter((r) => r.direction === "incurred")
+      .map((r) => ({ cp: r.counterparty ?? "", amt: str(r.amount) })),
+  );
+  const [recvCol, setRecvCol] = useState<RecvRow[]>(() =>
+    initial.receivables
+      .filter((r) => r.direction === "collected")
+      .map((r) => ({ cp: r.counterparty ?? "", amt: str(r.amount) })),
+  );
+  const [casts, setCasts] = useState<CastRow[]>(() =>
+    initial.casts.map((c) => ({
+      name: c.cast_name,
+      nom: str(c.nominate_amount),
+      tbl: str(c.table_amount),
+      comp: str(c.companion_amount),
+      back: str(c.back_amount),
+    })),
+  );
+
   const [status, setStatus] = useState(initial.status);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<null | "draft" | "confirm">(null);
@@ -80,21 +102,34 @@ export default function DailyForm({
     () => SALES_CATEGORIES.reduce((s, c) => s + num(cat[c]), 0),
     [cat],
   );
-  const paySum = useMemo(
-    () => PAYMENT_METHODS.reduce((s, p) => s + num(pay[p.key]), 0),
-    [pay],
-  );
-  const varSum = useMemo(
-    () => vars.reduce((s, r) => s + num(r.amount), 0),
-    [vars],
-  );
+  const varSum = useMemo(() => vars.reduce((s, r) => s + num(r.amount), 0), [vars]);
   const guestNum = num(guestCount);
   const groupNum = num(groupCount);
 
-  const catMismatch =
-    (catSum > 0 || totalNum > 0) && catSum > 0 && catSum !== totalNum;
-  const payMismatch =
-    (paySum > 0 || totalNum > 0) && paySum > 0 && paySum !== totalNum;
+  const incurredSum = useMemo(
+    () => recvIn.reduce((s, r) => s + num(r.amt), 0),
+    [recvIn],
+  );
+  const collectedSum = useMemo(
+    () => recvCol.reduce((s, r) => s + num(r.amt), 0),
+    [recvCol],
+  );
+  const recvBalance = initial.priorReceivableBalance + incurredSum - collectedSum;
+
+  const castBackSum = useMemo(
+    () => casts.reduce((s, c) => s + num(c.back), 0),
+    [casts],
+  );
+  const castTotal = useMemo(
+    () => casts.reduce((s, c) => s + num(c.nom) + num(c.tbl) + num(c.comp), 0),
+    [casts],
+  );
+
+  const paySum =
+    num(pay.cash) + num(pay.card) + num(pay.emoney) + incurredSum;
+
+  const catMismatch = catSum > 0 && catSum !== totalNum;
+  const payMismatch = paySum > 0 && paySum !== totalNum;
 
   function buildPayload(confirm: boolean): SavePayload {
     const costs: SavePayload["costs"] = [];
@@ -120,8 +155,36 @@ export default function DailyForm({
       guestCount: guestNum,
       groupCount: groupNum,
       categories: SALES_CATEGORIES.map((c) => ({ category: c, amount: num(cat[c]) })),
-      payments: PAYMENT_METHODS.map((p) => ({ method: p.key, amount: num(pay[p.key]) })),
+      payments: PAYMENT_METHODS.map((p) => ({
+        method: p.key,
+        amount: p.key === "receivable" ? incurredSum : num(pay[p.key]),
+      })),
       costs,
+      receivables: [
+        ...recvIn
+          .filter((r) => num(r.amt))
+          .map((r) => ({
+            direction: "incurred" as const,
+            counterparty: r.cp.trim() || null,
+            amount: num(r.amt),
+          })),
+        ...recvCol
+          .filter((r) => num(r.amt))
+          .map((r) => ({
+            direction: "collected" as const,
+            counterparty: r.cp.trim() || null,
+            amount: num(r.amt),
+          })),
+      ],
+      casts: casts
+        .filter((c) => c.name.trim())
+        .map((c) => ({
+          cast_name: c.name.trim(),
+          nominate_amount: num(c.nom),
+          table_amount: num(c.tbl),
+          companion_amount: num(c.comp),
+          back_amount: num(c.back),
+        })),
       confirm,
     };
   }
@@ -149,10 +212,11 @@ export default function DailyForm({
   const inputCls =
     "w-28 rounded-md border border-zinc-300 bg-white px-2 py-1 text-right text-sm tabular-nums outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-100";
   const wideCls = inputCls.replace("w-28", "w-40");
+  const cpCls =
+    "w-32 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-100";
 
   return (
     <div className="space-y-5">
-      {/* header */}
       <div className="flex flex-wrap items-center gap-3">
         <div>
           <h1 className="text-lg font-semibold">日次入力</h1>
@@ -254,16 +318,119 @@ export default function DailyForm({
 
       {/* 決済 */}
       <Section title="決済">
-        {PAYMENT_METHODS.map((m) => (
-          <Row key={m.key} label={m.label}>
-            <input inputMode="numeric" value={pay[m.key]} onChange={(e) => setPay({ ...pay, [m.key]: e.target.value })} className={inputCls} />
-          </Row>
-        ))}
+        <Row label="現金">
+          <input inputMode="numeric" value={pay.cash} onChange={(e) => setPay({ ...pay, cash: e.target.value })} className={inputCls} />
+        </Row>
+        <Row label="カード">
+          <input inputMode="numeric" value={pay.card} onChange={(e) => setPay({ ...pay, card: e.target.value })} className={inputCls} />
+        </Row>
+        <Row label="電子マネー">
+          <input inputMode="numeric" value={pay.emoney} onChange={(e) => setPay({ ...pay, emoney: e.target.value })} className={inputCls} />
+        </Row>
+        <Row label="売掛（＝下の「発生」合計から自動）" muted>
+          <span className="font-mono text-sm tabular-nums text-zinc-400">{yen(incurredSum)}</span>
+        </Row>
         <Row label="決済合計" muted>
           <span className={"font-mono text-sm tabular-nums " + (payMismatch ? "text-red-600" : "text-zinc-400")}>
             {yen(paySum)} {paySum === 0 ? "" : payMismatch ? "✕ 総売上と不一致" : "✓ 総売上と一致"}
           </span>
         </Row>
+      </Section>
+
+      {/* 売掛（ツケ） */}
+      <Section title="売掛（ツケ）">
+        <p className="mb-2 text-xs text-zinc-500">前日までの残高：{yen(initial.priorReceivableBalance)}</p>
+
+        <SubHead>当日発生</SubHead>
+        <EntryList
+          rows={recvIn}
+          setRows={setRecvIn}
+          cpCls={cpCls}
+          amtCls={inputCls}
+        />
+        <SubHead>当日回収</SubHead>
+        <EntryList
+          rows={recvCol}
+          setRows={setRecvCol}
+          cpCls={cpCls}
+          amtCls={inputCls}
+        />
+
+        <div className="mt-2 space-y-1 border-t border-zinc-200 pt-2 dark:border-zinc-800">
+          <Row label="当日発生 合計" muted>
+            <span className="font-mono text-sm tabular-nums text-zinc-400">{yen(incurredSum)}</span>
+          </Row>
+          <Row label="当日回収 合計" muted>
+            <span className="font-mono text-sm tabular-nums text-zinc-400">{yen(collectedSum)}</span>
+          </Row>
+          <Row label="売掛残高（前日 + 発生 − 回収）" muted>
+            <span className="font-mono text-sm font-medium tabular-nums text-zinc-600 dark:text-zinc-300">
+              {yen(recvBalance)}
+            </span>
+          </Row>
+        </div>
+      </Section>
+
+      {/* キャスト別売上 */}
+      <Section title="キャスト別売上">
+        <div className="space-y-2">
+          {casts.map((c, idx) => {
+            const rowTotal = num(c.nom) + num(c.tbl) + num(c.comp);
+            return (
+              <div key={idx} className="rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    placeholder="キャスト名"
+                    value={c.name}
+                    onChange={(e) => {
+                      const v = [...casts];
+                      v[idx] = { ...c, name: e.target.value };
+                      setCasts(v);
+                    }}
+                    className={cpCls}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCasts(casts.filter((_, i) => i !== idx))}
+                    className="ml-auto text-sm text-zinc-400 hover:text-red-600"
+                  >
+                    削除
+                  </button>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <Field label="本指名">
+                    <input inputMode="numeric" value={c.nom} onChange={(e) => { const v = [...casts]; v[idx] = { ...c, nom: e.target.value }; setCasts(v); }} className={inputCls} />
+                  </Field>
+                  <Field label="場内">
+                    <input inputMode="numeric" value={c.tbl} onChange={(e) => { const v = [...casts]; v[idx] = { ...c, tbl: e.target.value }; setCasts(v); }} className={inputCls} />
+                  </Field>
+                  <Field label="同伴">
+                    <input inputMode="numeric" value={c.comp} onChange={(e) => { const v = [...casts]; v[idx] = { ...c, comp: e.target.value }; setCasts(v); }} className={inputCls} />
+                  </Field>
+                  <Field label="バック">
+                    <input inputMode="numeric" value={c.back} onChange={(e) => { const v = [...casts]; v[idx] = { ...c, back: e.target.value }; setCasts(v); }} className={inputCls} />
+                  </Field>
+                </div>
+                <p className="mt-1 text-right text-xs text-zinc-400">売上 {yen(rowTotal)}</p>
+              </div>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={() => setCasts([...casts, { name: "", nom: "", tbl: "", comp: "", back: "" }])}
+          className="mt-2 rounded-md border border-zinc-300 px-3 py-1 text-sm dark:border-zinc-700"
+        >
+          ＋ キャストを追加
+        </button>
+        <div className="mt-2 space-y-1">
+          <Row label="キャスト売上 合計" muted>
+            <span className="font-mono text-sm tabular-nums text-zinc-400">{yen(castTotal)}</span>
+          </Row>
+          <Row label="キャストバック 合計（人件費へ）" muted>
+            <span className="font-mono text-sm tabular-nums text-zinc-400">{yen(castBackSum)}</span>
+          </Row>
+        </div>
       </Section>
 
       {/* 仕入れ・人件費 */}
@@ -278,8 +445,11 @@ export default function DailyForm({
             <input inputMode="numeric" value={labor[i]} onChange={(e) => setLabor({ ...labor, [i]: e.target.value })} className={inputCls} />
           </Row>
         ))}
+        <Row label="人件費 キャストバック（上のキャスト別から自動）" muted>
+          <span className="font-mono text-sm tabular-nums text-zinc-400">{yen(castBackSum)}</span>
+        </Row>
         <p className="mt-1 text-xs text-zinc-400">
-          キャストバック・月給スタッフ（日割り）・固定費は、月初セットアップ（M2′）から自動で人件費・経費に反映されます。
+          月給スタッフ（日割り）・固定費は、月初セットアップ（M2′）から自動で人件費・経費に反映されます。
         </p>
       </Section>
 
@@ -345,7 +515,6 @@ export default function DailyForm({
         </Row>
       </Section>
 
-      {/* actions */}
       <div className="flex gap-3 pt-2">
         <button
           type="button"
@@ -365,7 +534,7 @@ export default function DailyForm({
         </button>
       </div>
       <p className="text-xs text-zinc-400">
-        確定するには「総売上」と、入力済みの「売上内訳」「決済」の合計が一致している必要があります。確定後も修正できます（更新履歴が残ります）。
+        確定するには「総売上」と、入力済みの「売上内訳」「決済（現金＋カード＋電子＋売掛発生）」の合計が一致している必要があります。確定後も修正できます。
       </p>
     </div>
   );
@@ -377,6 +546,14 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 className="mb-3 text-sm font-semibold">{title}</h2>
       {children}
     </section>
+  );
+}
+
+function SubHead({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-1 mt-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
+      {children}
+    </p>
   );
 }
 
@@ -395,6 +572,71 @@ function Row({
         {label}
       </span>
       {children}
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs text-zinc-400">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function EntryList({
+  rows,
+  setRows,
+  cpCls,
+  amtCls,
+}: {
+  rows: { cp: string; amt: string }[];
+  setRows: (r: { cp: string; amt: string }[]) => void;
+  cpCls: string;
+  amtCls: string;
+}) {
+  return (
+    <div className="space-y-2">
+      {rows.map((r, idx) => (
+        <div key={idx} className="flex flex-wrap items-center gap-2">
+          <input
+            placeholder="相手（任意）"
+            value={r.cp}
+            onChange={(e) => {
+              const v = [...rows];
+              v[idx] = { ...r, cp: e.target.value };
+              setRows(v);
+            }}
+            className={cpCls}
+          />
+          <input
+            inputMode="numeric"
+            placeholder="金額"
+            value={r.amt}
+            onChange={(e) => {
+              const v = [...rows];
+              v[idx] = { ...r, amt: e.target.value };
+              setRows(v);
+            }}
+            className={amtCls}
+          />
+          <button
+            type="button"
+            onClick={() => setRows(rows.filter((_, i) => i !== idx))}
+            className="text-sm text-zinc-400 hover:text-red-600"
+          >
+            削除
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => setRows([...rows, { cp: "", amt: "" }])}
+        className="rounded-md border border-zinc-300 px-3 py-1 text-sm dark:border-zinc-700"
+      >
+        ＋ 明細を追加
+      </button>
     </div>
   );
 }

@@ -22,6 +22,19 @@ export type SavePayload = {
     amount: number;
     note?: string | null;
   }[];
+  receivables: {
+    direction: "incurred" | "collected";
+    counterparty: string | null;
+    amount: number;
+    note?: string | null;
+  }[];
+  casts: {
+    cast_name: string;
+    nominate_amount: number;
+    table_amount: number;
+    companion_amount: number;
+    back_amount: number;
+  }[];
   confirm: boolean;
 };
 
@@ -41,7 +54,20 @@ export async function saveDailyRecord(p: SavePayload): Promise<Result> {
 
   const total = n0(p.totalSales);
   const catSum = p.categories.reduce((s, c) => s + n0(c.amount), 0);
-  const paySum = p.payments.reduce((s, c) => s + n0(c.amount), 0);
+
+  // 売掛「発生」の合計 → 決済の売掛はここから自動（二重入力しない）
+  const incurredSum = p.receivables
+    .filter((r) => r.direction === "incurred")
+    .reduce((s, r) => s + n0(r.amount), 0);
+  const castBackSum = p.casts.reduce((s, c) => s + n0(c.back_amount), 0);
+
+  const normPayments = PAYMENT_METHODS.map((m) => {
+    if (m.key === "receivable")
+      return { method: "receivable", amount: incurredSum };
+    const found = p.payments.find((x) => x.method === m.key);
+    return { method: m.key as string, amount: n0(found?.amount ?? 0) };
+  });
+  const paySum = normPayments.reduce((s, c) => s + n0(c.amount), 0);
 
   if (p.confirm) {
     if (total <= 0) return { ok: false, error: "総売上を入力してください" };
@@ -51,7 +77,7 @@ export async function saveDailyRecord(p: SavePayload): Promise<Result> {
         error: `売上内訳の合計（¥${catSum.toLocaleString("ja-JP")}）が総売上（¥${total.toLocaleString("ja-JP")}）と一致しません`,
       };
     }
-    if (p.payments.some((c) => c.amount) && paySum !== total) {
+    if (normPayments.some((c) => c.amount > 0) && paySum !== total) {
       return {
         ok: false,
         error: `決済の合計（¥${paySum.toLocaleString("ja-JP")}）が総売上（¥${total.toLocaleString("ja-JP")}）と一致しません`,
@@ -90,9 +116,9 @@ export async function saveDailyRecord(p: SavePayload): Promise<Result> {
     supabase.from("daily_sales_categories").delete().eq("daily_record_id", rid),
     supabase.from("daily_payments").delete().eq("daily_record_id", rid),
     supabase.from("daily_costs").delete().eq("daily_record_id", rid),
+    supabase.from("daily_receivable_entries").delete().eq("daily_record_id", rid),
+    supabase.from("daily_cast_sales").delete().eq("daily_record_id", rid),
   ]);
-
-  const validMethods = new Set(PAYMENT_METHODS.map((m) => m.key as string));
 
   const catRows = p.categories
     .filter((c) => n0(c.amount) > 0)
@@ -102,17 +128,60 @@ export async function saveDailyRecord(p: SavePayload): Promise<Result> {
       amount: n0(c.amount),
       sort_order: i,
     }));
-  const payRows = p.payments
-    .filter((c) => n0(c.amount) > 0 && validMethods.has(c.method))
+  const payRows = normPayments
+    .filter((c) => n0(c.amount) > 0)
     .map((c) => ({ daily_record_id: rid, method: c.method, amount: n0(c.amount) }));
+
   const costRows = p.costs
-    .filter((c) => n0(c.amount) > 0 && c.item.trim() !== "")
+    .filter(
+      (c) => n0(c.amount) > 0 && c.item.trim() !== "" && c.item.trim() !== "キャストバック",
+    )
     .map((c, i) => ({
       daily_record_id: rid,
       cost_class: c.cost_class,
       item: c.item.trim(),
       amount: n0(c.amount),
       note: c.note?.trim() || null,
+      sort_order: i,
+    }));
+  if (castBackSum > 0) {
+    costRows.push({
+      daily_record_id: rid,
+      cost_class: "labor",
+      item: "キャストバック",
+      amount: castBackSum,
+      note: null,
+      sort_order: costRows.length,
+    });
+  }
+
+  const recvRows = p.receivables
+    .filter((r) => n0(r.amount) > 0)
+    .map((r, i) => ({
+      daily_record_id: rid,
+      direction: r.direction,
+      counterparty: r.counterparty?.trim() || null,
+      amount: n0(r.amount),
+      note: r.note?.trim() || null,
+      sort_order: i,
+    }));
+  const castRows = p.casts
+    .filter(
+      (c) =>
+        c.cast_name.trim() !== "" &&
+        n0(c.nominate_amount) +
+          n0(c.table_amount) +
+          n0(c.companion_amount) +
+          n0(c.back_amount) >
+          0,
+    )
+    .map((c, i) => ({
+      daily_record_id: rid,
+      cast_name: c.cast_name.trim(),
+      nominate_amount: n0(c.nominate_amount),
+      table_amount: n0(c.table_amount),
+      companion_amount: n0(c.companion_amount),
+      back_amount: n0(c.back_amount),
       sort_order: i,
     }));
 
@@ -122,6 +191,10 @@ export async function saveDailyRecord(p: SavePayload): Promise<Result> {
   if (payRows.length)
     inserts.push(supabase.from("daily_payments").insert(payRows));
   if (costRows.length) inserts.push(supabase.from("daily_costs").insert(costRows));
+  if (recvRows.length)
+    inserts.push(supabase.from("daily_receivable_entries").insert(recvRows));
+  if (castRows.length)
+    inserts.push(supabase.from("daily_cast_sales").insert(castRows));
 
   const results = await Promise.all(inserts);
   const childErr = results.find((r) => r.error);
