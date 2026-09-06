@@ -12,6 +12,7 @@ export type MonthlySetupPayload = {
   yearMonth: string; // "2026-09-01"
   fixed: { item: string; category: string; amount: number }[];
   staff: { name: string; amount: number }[];
+  salesTarget: number;
 };
 
 type Result = { ok: true } | { ok: false; error: string };
@@ -72,6 +73,14 @@ export async function saveMonthlySetup(
   const results = await Promise.all(inserts);
   const err = results.find((r) => r.error);
   if (err?.error) return { ok: false, error: err.error.message };
+
+  // 月間売上目標
+  const target = n0(p.salesTarget);
+  const { error: tErr } = await supabase.from("monthly_targets").upsert(
+    { store_id: p.storeId, year_month: p.yearMonth, sales_target: target },
+    { onConflict: "store_id,year_month" },
+  );
+  if (tErr) return { ok: false, error: tErr.message };
 
   revalidatePath(`/setup/${p.storeId}/${p.yearMonth.slice(0, 7)}`);
   revalidatePath("/dashboard");

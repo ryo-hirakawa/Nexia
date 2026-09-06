@@ -9,6 +9,7 @@ export type MonthlySetupForm = {
   yearMonth: string; // "2026-09-01"
   fixed: FixedLineForm[];
   staff: StaffLineForm[];
+  salesTarget: number;
   updatedAt: string | null;
 };
 

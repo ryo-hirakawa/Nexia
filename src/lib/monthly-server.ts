@@ -9,12 +9,21 @@ async function loadByMonthKey(
 ): Promise<MonthlySetupForm> {
   const supabase = await createClient();
 
+  const { data: tgt } = await supabase
+    .from("monthly_targets")
+    .select("sales_target")
+    .eq("store_id", storeId)
+    .eq("year_month", yearMonth)
+    .maybeSingle();
+  const salesTarget = Number(tgt?.sales_target ?? 0);
+
   const empty: MonthlySetupForm = {
     id: null,
     storeId,
     yearMonth,
     fixed: [],
     staff: [],
+    salesTarget,
     updatedAt: null,
   };
 
@@ -44,6 +53,7 @@ async function loadByMonthKey(
     id: ms.id,
     storeId,
     yearMonth,
+    salesTarget,
     updatedAt: ms.updated_at,
     fixed: (fixed ?? []).map((l) => ({
       item: l.item,

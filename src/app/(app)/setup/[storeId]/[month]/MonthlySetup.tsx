@@ -54,6 +54,7 @@ export default function MonthlySetup({
   );
   const [vitems, setVitems] = useState<string[]>(variableItems);
   const [newItem, setNewItem] = useState("");
+  const [salesTarget, setSalesTarget] = useState(str(initial.salesTarget));
 
   const [error, setError] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
@@ -84,6 +85,7 @@ export default function MonthlySetup({
         ? prev.staff.map((l) => ({ name: l.name, amount: str(l.amount) }))
         : [{ name: "", amount: "" }],
     );
+    setSalesTarget(str(prev.salesTarget));
     setSavedMsg("前月の設定をコピーしました（保存するまで反映されません）");
   }
 
@@ -101,6 +103,7 @@ export default function MonthlySetup({
           amount: num(r.amount),
         })),
         staff: staff.map((r) => ({ name: r.name, amount: num(r.amount) })),
+        salesTarget: num(salesTarget),
       });
       if (!r1.ok) {
         setError(r1.error);
@@ -174,6 +177,27 @@ export default function MonthlySetup({
           <span className="text-xs text-zinc-400">前月の設定はまだありません</span>
         ) : null}
       </div>
+
+      {/* 月間売上目標 */}
+      <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <h2 className="mb-1 text-sm font-semibold">月間 売上目標</h2>
+        <p className="mb-3 text-xs text-zinc-400">
+          ダッシュボードの達成率・着地予測に使います。
+        </p>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-zinc-500">今月の目標</span>
+          <input
+            inputMode="numeric"
+            placeholder="例：4000000"
+            value={salesTarget}
+            onChange={(e) => setSalesTarget(e.target.value)}
+            className={amtCls}
+          />
+          <span className="font-mono text-xs tabular-nums text-zinc-400">
+            {yen(num(salesTarget))}
+          </span>
+        </div>
+      </section>
 
       {/* 固定費 */}
       <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">

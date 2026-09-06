@@ -233,6 +233,17 @@ describe("テナント隔離（RLS）", () => {
       .insert({ store_id: storeAId, year_month: "2026-10-01" })
       .select("id");
     expect(insErr !== null || (ins ?? []).length === 0).toBe(true);
+
+    // monthly_targets も同様
+    const { error: tErr } = await a
+      .from("monthly_targets")
+      .insert({ store_id: storeAId, year_month: "2026-09-01", sales_target: 4000000 });
+    expect(tErr).toBeNull();
+    const { data: tSeen } = await b
+      .from("monthly_targets")
+      .select("id")
+      .eq("store_id", storeAId);
+    expect(tSeen).toEqual([]);
   });
 
   test("一般ユーザーは自分を管理者に昇格できない", async () => {
