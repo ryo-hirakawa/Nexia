@@ -24,7 +24,10 @@ export async function signInWithPassword(formData: FormData) {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    redirect(`/login?error=${encodeURIComponent("ログインできませんでした。入力内容を確認してください")}`);
+    // TODO(M0'): 診断が済んだら汎用メッセージに戻す
+    redirect(
+      `/login?error=${encodeURIComponent(`ログイン失敗: ${error.status ?? ""} ${error.message}`)}`,
+    );
   }
 
   revalidatePath("/", "layout");
