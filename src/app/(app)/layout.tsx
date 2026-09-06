@@ -10,14 +10,16 @@ export default async function AppLayout({
   const membership = await requireMembership();
   const roleLabel = primaryRoleLabel(membership);
 
+  const canWrite =
+    membership.isPlatformAdmin ||
+    hasRole(membership, "owner") ||
+    hasRole(membership, "manager");
+
   const nav: { href: string; label: string }[] = [
     { href: "/dashboard", label: "ダッシュボード" },
   ];
-  if (
-    membership.isPlatformAdmin ||
-    hasRole(membership, "owner") ||
-    hasRole(membership, "manager")
-  ) {
+  if (canWrite) {
+    nav.push({ href: "/input", label: "日次入力" });
     nav.push({ href: "/stores", label: "店舗" });
   }
   if (membership.isPlatformAdmin) {

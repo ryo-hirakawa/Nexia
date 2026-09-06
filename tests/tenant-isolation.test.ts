@@ -167,6 +167,31 @@ describe("テナント隔離（RLS）", () => {
     expect(check?.length).toBe(1);
   });
 
+  test("A社ユーザーは自店の日次レコードを作れ、B社からは見えない・書けない", async () => {
+    const a = await signIn(emailA);
+    const b = await signIn(emailB);
+
+    const { data: created, error: cErr } = await a
+      .from("daily_records")
+      .insert({ store_id: storeAId, business_date: "2026-09-01", total_sales: 100000 })
+      .select("id")
+      .single();
+    expect(cErr).toBeNull();
+    expect(created?.id).toBeTruthy();
+
+    const { data: seen } = await b
+      .from("daily_records")
+      .select("id")
+      .eq("store_id", storeAId);
+    expect(seen).toEqual([]);
+
+    const { data: ins, error: insErr } = await b
+      .from("daily_records")
+      .insert({ store_id: storeAId, business_date: "2026-09-02", total_sales: 1 })
+      .select("id");
+    expect(insErr !== null || (ins ?? []).length === 0).toBe(true);
+  });
+
   test("一般ユーザーは自分を管理者に昇格できない", async () => {
     const a = await signIn(emailA);
     const { error } = await a

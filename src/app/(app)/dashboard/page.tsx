@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireMembership, primaryRoleLabel } from "@/lib/auth";
 
 export default async function DashboardPage() {
@@ -31,8 +32,11 @@ export default async function DashboardPage() {
       </div>
 
       <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-6 text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900">
-        まだデータがありません。日次入力フォーム（M1′）と集計（M2′・M3′）は次のマイルストーンで実装します。
-        この画面が権限ごとに表示できていれば <span className="font-medium text-zinc-700 dark:text-zinc-300">M0′ 完了</span> です。
+        集計表示（M3′）はこれから。まずは{" "}
+        <Link href="/input" className="font-medium text-zinc-700 underline dark:text-zinc-300">
+          日次入力
+        </Link>{" "}
+        から数字を記録してください。
       </div>
     </div>
   );
