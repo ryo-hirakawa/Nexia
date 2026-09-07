@@ -26,6 +26,7 @@ export default async function AppLayout({
     nav.push({ href: "/stores", label: "店舗" });
   }
   nav.push({ href: "/help", label: "使い方" });
+  nav.push({ href: "/settings", label: "設定" });
   if (membership.isPlatformAdmin) {
     nav.push({ href: "/admin/clients", label: "クライアント管理" });
   }
