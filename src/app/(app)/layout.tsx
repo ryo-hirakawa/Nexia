@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireMembership, primaryRoleLabel, hasRole } from "@/lib/auth";
 import { signOut } from "@/app/login/actions";
+import { APP_NAME, APP_SUFFIX } from "@/lib/brand";
 
 export default async function AppLayout({
   children,
@@ -23,37 +24,41 @@ export default async function AppLayout({
     nav.push({ href: "/setup", label: "月初セットアップ" });
     nav.push({ href: "/stores", label: "店舗" });
   }
+  nav.push({ href: "/help", label: "使い方" });
   if (membership.isPlatformAdmin) {
     nav.push({ href: "/admin/clients", label: "クライアント管理" });
   }
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto flex w-full max-w-5xl items-center gap-4 px-4 py-3">
-          <span className="text-sm font-semibold">店舗売上管理ツール</span>
-          <nav className="flex items-center gap-3 text-sm">
+      <header className="bg-navy text-white">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3">
+          <Link href="/dashboard" className="flex items-baseline gap-1.5">
+            <span className="text-base font-bold tracking-tight">{APP_NAME}</span>
+            <span className="text-[10px] font-medium text-white/55">{APP_SUFFIX}</span>
+          </Link>
+          <nav className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             {nav.map((n) => (
               <Link
                 key={n.href}
                 href={n.href}
-                className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                className="text-white/75 transition-colors hover:text-white"
               >
                 {n.label}
               </Link>
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-3">
-            <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+            <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-white/90">
               {roleLabel}
             </span>
-            <span className="hidden text-xs text-zinc-400 sm:inline">
+            <span className="hidden text-xs text-white/55 sm:inline">
               {membership.profile.full_name ?? ""}
             </span>
             <form action={signOut}>
               <button
                 type="submit"
-                className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                className="rounded-md border border-white/25 px-2.5 py-1 text-xs text-white/85 hover:bg-white/10"
               >
                 ログアウト
               </button>
@@ -62,7 +67,7 @@ export default async function AppLayout({
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">{children}</main>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>
     </div>
   );
 }
