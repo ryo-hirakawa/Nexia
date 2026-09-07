@@ -1,5 +1,6 @@
 "use client";
 
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   RadialBarChart,
   RadialBar,
@@ -13,6 +14,23 @@ import {
   ResponsiveContainer,
   LabelList,
 } from "recharts";
+
+/** 親要素の実幅を ResizeObserver で測る（recharts の ResponsiveContainer が
+ *  React 19 hydration 時に 0 幅のまま固まる問題の回避） */
+function useWidth() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setW(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w] as const;
+}
 
 const NAVY = "#24406e";
 const ORANGE = "#e0791f";
@@ -60,10 +78,16 @@ export function TrendBars({
 }: {
   data: { label: string; value: number; dim?: boolean }[];
 }) {
+  const [ref, w] = useWidth();
   return (
-    <div className="h-48 w-full">
-      <ResponsiveContainer>
-        <BarChart data={data} margin={{ top: 16, right: 4, bottom: 0, left: 4 }}>
+    <div ref={ref} className="h-48 w-full">
+      {w > 0 ? (
+        <BarChart
+          width={w}
+          height={192}
+          data={data}
+          margin={{ top: 16, right: 4, bottom: 0, left: 4 }}
+        >
           <XAxis
             dataKey="label"
             tick={{ fontSize: 10, fill: "#98a1b0" }}
@@ -86,7 +110,7 @@ export function TrendBars({
             />
           </Bar>
         </BarChart>
-      </ResponsiveContainer>
+      ) : null}
     </div>
   );
 }
