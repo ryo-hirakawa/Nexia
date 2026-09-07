@@ -41,6 +41,7 @@ export function AchievementGauge({ rate }: { rate: number | null }) {
             dataKey="v"
             cornerRadius={20}
             fill={pctNum >= 100 ? ORANGE : NAVY}
+            isAnimationActive={false}
           />
         </RadialBarChart>
       </ResponsiveContainer>
@@ -70,7 +71,7 @@ export function TrendBars({
             tickLine={false}
             interval="preserveStartEnd"
           />
-          <Bar dataKey="value" radius={[3, 3, 0, 0]} maxBarSize={26}>
+          <Bar dataKey="value" radius={[3, 3, 0, 0]} maxBarSize={26} isAnimationActive={false}>
             {data.map((d, i) => (
               <Cell key={i} fill={d.dim ? TRACK : NAVY} />
             ))}
@@ -114,6 +115,7 @@ export function CompositionDonut({
               outerRadius="100%"
               paddingAngle={1}
               stroke="none"
+              isAnimationActive={false}
             >
               {data.map((_, i) => (
                 <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
