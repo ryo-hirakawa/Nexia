@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireMembership, primaryRoleLabel, hasRole } from "@/lib/auth";
 import { signOut } from "@/app/login/actions";
 import { APP_NAME, APP_SUFFIX } from "@/lib/brand";
+import { NavLink } from "./nav-link";
 
 export default async function AppLayout({
   children,
@@ -39,13 +40,7 @@ export default async function AppLayout({
           </Link>
           <nav className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             {nav.map((n) => (
-              <Link
-                key={n.href}
-                href={n.href}
-                className="text-white/75 transition-colors hover:text-white"
-              >
-                {n.label}
-              </Link>
+              <NavLink key={n.href} href={n.href} label={n.label} />
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-3">

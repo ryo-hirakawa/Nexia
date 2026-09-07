@@ -5,14 +5,9 @@ import { jstDateString, yen, isValidDateStr } from "@/lib/daily";
 import { latestRecordedDate } from "@/lib/monthly-server";
 import { loadDashboardData } from "@/lib/dashboard-server";
 import { pct } from "@/lib/finance";
-import { periodLabel, shiftRef, fmtMD, type DashView } from "@/lib/period";
+import { fmtMD, type DashView } from "@/lib/period";
 import { AchievementGauge, TrendBars, CompositionDonut } from "./charts";
-
-const VIEWS: { key: DashView; label: string }[] = [
-  { key: "day", label: "日" },
-  { key: "week", label: "週" },
-  { key: "month", label: "月" },
-];
+import { DashControls } from "./controls";
 
 export default async function DashboardPage({
   searchParams,
@@ -46,58 +41,22 @@ export default async function DashboardPage({
       : ((await latestRecordedDate(store.id)) ?? jstDateString(0));
 
   const d = await loadDashboardData(store.id, view, refDate);
-
-  const q = (o: Record<string, string>) => {
-    const p = new URLSearchParams({ view, d: refDate, s: store.id, ...o });
-    return `/dashboard?${p.toString()}`;
-  };
-
   const costTotal = d.cogs + d.labor + d.fixedProrated + d.variable;
 
   return (
     <div className="space-y-5">
-      {/* header */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">ダッシュボード</h1>
-          <p className="text-sm text-muted">{store.name}</p>
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <div className="flex overflow-hidden rounded-lg border border-line text-sm">
-            {VIEWS.map((v) => (
-              <Link
-                key={v.key}
-                href={q({ view: v.key })}
-                className={
-                  "px-3.5 py-1.5 font-medium transition-colors " +
-                  (v.key === view
-                    ? "bg-navy text-white"
-                    : "bg-surface text-muted hover:bg-surface-2")
-                }
-              >
-                {v.label}
-              </Link>
-            ))}
-          </div>
-        </div>
+      <div>
+        <h1 className="text-xl font-bold tracking-tight">ダッシュボード</h1>
+        <p className="text-sm text-muted">{store.name}</p>
       </div>
 
-      {/* period nav */}
-      <div className="flex flex-wrap items-center gap-3 text-sm">
-        <Link href={q({ d: shiftRef(view, refDate, -1) })} className="rounded-md border border-line px-2 py-1 hover:bg-surface-2">
-          ◀
-        </Link>
-        <span className="font-semibold">{periodLabel(view, refDate)}</span>
-        <Link href={q({ d: shiftRef(view, refDate, 1) })} className="rounded-md border border-line px-2 py-1 hover:bg-surface-2">
-          ▶
-        </Link>
-        {d.recordedDays > 0 ? (
-          <span className="text-xs text-muted">
-            記録 {d.recordedDays} 日
-            {d.draftDays > 0 ? `（うち未確定 ${d.draftDays} 日）` : ""}
-          </span>
-        ) : null}
-      </div>
+      <DashControls
+        view={view}
+        refDate={refDate}
+        storeId={store.id}
+        recordedDays={d.recordedDays}
+        draftDays={d.draftDays}
+      />
 
       {!d.hasSetup ? (
         <p className="rounded-lg border border-warn/30 bg-warn/5 px-3 py-2 text-sm text-warn">
