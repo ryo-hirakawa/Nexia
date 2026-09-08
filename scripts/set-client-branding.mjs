@@ -22,7 +22,7 @@ const a = createClient(url, key, { auth: { persistSession: false } });
 const CLIENT_MATCH = "パイロット";
 const NEW_CLIENT_NAME = "Bar Miami";
 const NEW_STORE_NAME = "Bar Miami 大名";
-const BRAND_PRIMARY = "#000000"; // 近黒
+const BRAND_PRIMARY = "#14171b"; // 近黒
 const BRAND_ACCENT = "#17a79a"; // ロゴのティール（UI 用に少し深め）
 
 const logoPath = process.argv[2];
