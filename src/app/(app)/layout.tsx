@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireMembership, primaryRoleLabel, hasRole } from "@/lib/auth";
 import { signOut } from "@/app/login/actions";
 import { APP_NAME, APP_SUFFIX } from "@/lib/brand";
+import { loadBranding, brandingCss } from "@/lib/branding-server";
 import { NavLink } from "./nav-link";
 
 export default async function AppLayout({
@@ -11,6 +12,8 @@ export default async function AppLayout({
 }) {
   const membership = await requireMembership();
   const roleLabel = primaryRoleLabel(membership);
+  const branding = await loadBranding(membership);
+  const overrideCss = branding ? brandingCss(branding) : "";
 
   const canWrite =
     membership.isPlatformAdmin ||
@@ -33,11 +36,27 @@ export default async function AppLayout({
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
+      {overrideCss ? (
+        <style dangerouslySetInnerHTML={{ __html: overrideCss }} />
+      ) : null}
       <header className="bg-navy text-white">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3">
-          <Link href="/dashboard" className="flex items-baseline gap-1.5">
-            <span className="text-base font-bold tracking-tight">{APP_NAME}</span>
-            <span className="text-[10px] font-medium text-white/55">{APP_SUFFIX}</span>
+          <Link href="/dashboard" className="flex items-center gap-2">
+            {branding?.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={branding.logoUrl}
+                alt={branding.name}
+                className="h-7 w-auto"
+              />
+            ) : (
+              <span className="text-base font-bold tracking-tight">
+                {branding?.name ?? APP_NAME}
+              </span>
+            )}
+            <span className="text-[10px] font-medium text-white/55">
+              {branding ? "by Nexia" : APP_SUFFIX}
+            </span>
           </Link>
           <nav className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             {nav.map((n) => (
