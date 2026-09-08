@@ -3,8 +3,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { BarChart, Bar, XAxis, Cell, LabelList } from "recharts";
 
-const NAVY = "#24406e";
-const ORANGE = "#e0791f";
+const NAVY = "var(--navy)";
+const ORANGE = "var(--orange)";
 
 function useWidth() {
   const ref = useRef<HTMLDivElement>(null);
@@ -38,8 +38,8 @@ export function StoreSalesBars({
         >
           <XAxis
             dataKey="name"
-            tick={{ fontSize: 10, fill: "#98a1b0" }}
-            axisLine={{ stroke: "#e3e6eb" }}
+            tick={{ fontSize: 10, fill: "var(--muted)" }}
+            axisLine={{ stroke: "var(--line)" }}
             tickLine={false}
             interval={0}
           />
@@ -54,7 +54,7 @@ export function StoreSalesBars({
                 const n = Number(v) || 0;
                 return n ? "¥" + Math.round(n / 10000) + "万" : "";
               }}
-              style={{ fontSize: 10, fill: "#98a1b0" }}
+              style={{ fontSize: 10, fill: "var(--muted)" }}
             />
           </Bar>
         </BarChart>

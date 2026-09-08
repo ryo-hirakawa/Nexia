@@ -32,10 +32,18 @@ function useWidth() {
   return [ref, w] as const;
 }
 
-const NAVY = "#24406e";
-const ORANGE = "#e0791f";
-const TRACK = "#e3e6eb";
-const PIE_COLORS = ["#24406e", "#e0791f", "#3f6ea5", "#f0a35e", "#8aa4c4", "#c9ced8"];
+const NAVY = "var(--navy)";
+const ORANGE = "var(--orange)";
+const TRACK = "var(--line)";
+const MUTED = "var(--muted)";
+const PIE_COLORS = [
+  "var(--navy)",
+  "var(--orange)",
+  "#6f8bb0",
+  "#f0a35e",
+  "#9db2cc",
+  "#c9ced8",
+];
 
 const yen0 = (n: number) => "¥" + Math.round(n).toLocaleString("ja-JP");
 
@@ -90,7 +98,7 @@ export function TrendBars({
         >
           <XAxis
             dataKey="label"
-            tick={{ fontSize: 10, fill: "#98a1b0" }}
+            tick={{ fontSize: 10, fill: MUTED }}
             axisLine={{ stroke: TRACK }}
             tickLine={false}
             interval="preserveStartEnd"
@@ -106,7 +114,7 @@ export function TrendBars({
                 const n = Number(v) || 0;
                 return n ? Math.round(n / 1000) + "k" : "";
               }}
-              style={{ fontSize: 9, fill: "#98a1b0" }}
+              style={{ fontSize: 9, fill: MUTED }}
             />
           </Bar>
         </BarChart>
