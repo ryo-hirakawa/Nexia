@@ -31,6 +31,22 @@ export async function GET() {
   const prevRefDate = shiftRef(view, refDate, -1);
   const yearAgoRefDate = shiftYearRef(refDate, -1);
 
+  // Isolation test: run each branch ALONE (no concurrent siblings) to see
+  // whether per-call latency is consistent regardless of how many other
+  // calls are in flight at once. If concurrency is the bottleneck, each of
+  // these alone should be much faster than the combined Promise.all below.
+  await loadDashboardData(store.id, view, refDate);
+  mark("SOLO: loadDashboardData(detail:true)");
+
+  await loadDashboardData(store.id, view, prevRefDate, { detail: false });
+  mark("SOLO: loadDashboardData(detail:false)");
+
+  await loadWeekdayAverages(store.id, refDate);
+  mark("SOLO: loadWeekdayAverages");
+
+  await loadMonthlyYoY(store.id, refDate);
+  mark("SOLO: loadMonthlyYoY");
+
   await Promise.all([
     loadDashboardData(store.id, view, refDate),
     loadDashboardData(store.id, view, prevRefDate, { detail: false }),
