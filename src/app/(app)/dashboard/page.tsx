@@ -96,8 +96,11 @@ export default async function DashboardPage({
 
   const [d, previous, yearAgo, weekday, monthlyYoY] = await Promise.all([
     loadDashboardData(store.id, view, refDate),
-    loadDashboardData(store.id, view, prevRefDate),
-    yearAgoRefDate ? loadDashboardData(store.id, "month", yearAgoRefDate) : null,
+    // 前月/前年同月比較では合計値しか使わないので detail:false で往復を減らす
+    loadDashboardData(store.id, view, prevRefDate, { detail: false }),
+    yearAgoRefDate
+      ? loadDashboardData(store.id, "month", yearAgoRefDate, { detail: false })
+      : null,
     loadWeekdayAverages(store.id, refDate),
     view === "month" ? loadMonthlyYoY(store.id, refDate) : null,
   ]);

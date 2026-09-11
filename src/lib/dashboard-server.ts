@@ -61,25 +61,46 @@ export async function loadDashboardData(
   storeId: string,
   view: DashView,
   refDate: string,
+  opts?: { detail?: boolean },
 ): Promise<DashboardData> {
+  // detail=false は前月/前年など「比較用の集計値だけ欲しい」呼び出し向け。
+  // カテゴリ別・決済別・キャスト別・売掛残高はダッシュボードの比較表示では
+  // 使わないため、該当クエリ自体を投げずに往復回数を減らす。
+  const detail = opts?.detail ?? true;
   const supabase = await createClient();
   const range = periodRange(view, refDate);
   const monthKey = monthKeyOf(refDate);
   const dim = daysInMonth(refDate);
 
-  const setup = await loadSetupDataForDate(storeId, refDate);
+  // 互いに依存しないクエリは並列で投げ、往復のシーケンス数を減らす
+  const [setup, recsResult, tgtResult, recvResult] = await Promise.all([
+    loadSetupDataForDate(storeId, refDate),
+    supabase
+      .from("daily_records")
+      .select("id, business_date, status, total_sales, guest_count, group_count")
+      .eq("store_id", storeId)
+      .gte("business_date", range.start)
+      .lte("business_date", range.end)
+      .order("business_date"),
+    supabase
+      .from("monthly_targets")
+      .select("sales_target")
+      .eq("store_id", storeId)
+      .eq("year_month", monthKey)
+      .maybeSingle(),
+    detail
+      ? supabase
+          .from("daily_receivable_entries")
+          .select("direction, amount, daily_records!inner(store_id, business_date)")
+          .eq("daily_records.store_id", storeId)
+          .lte("daily_records.business_date", range.end)
+      : Promise.resolve({ data: [] as { direction: string; amount: number }[] }),
+  ]);
+
   const fixedPerDay = proratedFixed(setup, dim);
   const staffPerDay = proratedStaff(setup, dim);
 
-  const { data: recs } = await supabase
-    .from("daily_records")
-    .select("id, business_date, status, total_sales, guest_count, group_count")
-    .eq("store_id", storeId)
-    .gte("business_date", range.start)
-    .lte("business_date", range.end)
-    .order("business_date");
-
-  const records = recs ?? [];
+  const records = recsResult.data ?? [];
   const recordedDays = records.length;
   const draftDays = records.filter((r) => r.status === "draft").length;
   const ids = records.map((r) => r.id);
@@ -97,36 +118,51 @@ export async function loadDashboardData(
 
   if (ids.length) {
     const [c1, c2, c3, c4] = await Promise.all([
-      supabase
-        .from("daily_sales_categories")
-        .select("category, amount")
-        .in("daily_record_id", ids),
-      supabase
-        .from("daily_payments")
-        .select("method, amount")
-        .in("daily_record_id", ids),
+      // 費目別経費（当該/比較の両方で使う）は常に取得
       supabase
         .from("daily_costs")
         .select("cost_class, item, amount")
         .in("daily_record_id", ids),
-      supabase
-        .from("daily_cast_sales")
-        .select(
-          "cast_name, nominate_amount, table_amount, companion_amount, back_amount",
-        )
-        .in("daily_record_id", ids),
+      detail
+        ? supabase
+            .from("daily_sales_categories")
+            .select("category, amount")
+            .in("daily_record_id", ids)
+        : Promise.resolve({ data: [] as { category: string; amount: number }[] }),
+      detail
+        ? supabase
+            .from("daily_payments")
+            .select("method, amount")
+            .in("daily_record_id", ids)
+        : Promise.resolve({ data: [] as { method: string; amount: number }[] }),
+      detail
+        ? supabase
+            .from("daily_cast_sales")
+            .select(
+              "cast_name, nominate_amount, table_amount, companion_amount, back_amount",
+            )
+            .in("daily_record_id", ids)
+        : Promise.resolve({
+            data: [] as {
+              cast_name: string;
+              nominate_amount: number;
+              table_amount: number;
+              companion_amount: number;
+              back_amount: number;
+            }[],
+          }),
     ]);
-    categories = (c1.data ?? []).map((r) => ({
+    costs = (c1.data ?? []).map((r) => ({
+      cost_class: r.cost_class,
+      item: r.item,
+      amount: Number(r.amount),
+    }));
+    categories = (c2.data ?? []).map((r) => ({
       category: r.category,
       amount: Number(r.amount),
     }));
-    payments = (c2.data ?? []).map((r) => ({
+    payments = (c3.data ?? []).map((r) => ({
       method: r.method,
-      amount: Number(r.amount),
-    }));
-    costs = (c3.data ?? []).map((r) => ({
-      cost_class: r.cost_class,
-      item: r.item,
       amount: Number(r.amount),
     }));
     casts = (c4.data ?? []).map((r) => ({
@@ -153,14 +189,7 @@ export async function loadDashboardData(
   const totalCost = cogs + labor + variable + fixedProrated;
   const operatingProfit = sales - totalCost;
 
-  // 目標
-  const { data: tgt } = await supabase
-    .from("monthly_targets")
-    .select("sales_target")
-    .eq("store_id", storeId)
-    .eq("year_month", monthKey)
-    .maybeSingle();
-  const salesTarget = Number(tgt?.sales_target ?? 0);
+  const salesTarget = Number(tgtResult.data?.sales_target ?? 0);
 
   let landingForecast: number | null = null;
   if (view === "month" && salesTarget >= 0) {
@@ -170,13 +199,9 @@ export async function loadDashboardData(
     }
   }
 
-  // 売掛残高（期間末時点の店舗累計）
-  const { data: recvRows } = await supabase
-    .from("daily_receivable_entries")
-    .select("direction, amount, daily_records!inner(store_id, business_date)")
-    .eq("daily_records.store_id", storeId)
-    .lte("daily_records.business_date", range.end);
-  const receivableBalance = (recvRows ?? []).reduce(
+  // 売掛残高（期間末時点の店舗累計。detail=false のときは 0 のまま）
+  const recvRows = recvResult.data ?? [];
+  const receivableBalance = recvRows.reduce(
     (s, r) =>
       s + (r.direction === "incurred" ? Number(r.amount) : -Number(r.amount)),
     0,

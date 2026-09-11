@@ -9,12 +9,21 @@ async function loadByMonthKey(
 ): Promise<MonthlySetupForm> {
   const supabase = await createClient();
 
-  const { data: tgt } = await supabase
-    .from("monthly_targets")
-    .select("sales_target")
-    .eq("store_id", storeId)
-    .eq("year_month", yearMonth)
-    .maybeSingle();
+  // 互いに依存しないので並列で取得する
+  const [{ data: tgt }, { data: ms }] = await Promise.all([
+    supabase
+      .from("monthly_targets")
+      .select("sales_target")
+      .eq("store_id", storeId)
+      .eq("year_month", yearMonth)
+      .maybeSingle(),
+    supabase
+      .from("monthly_setups")
+      .select("id, updated_at")
+      .eq("store_id", storeId)
+      .eq("year_month", yearMonth)
+      .maybeSingle(),
+  ]);
   const salesTarget = Number(tgt?.sales_target ?? 0);
 
   const empty: MonthlySetupForm = {
@@ -26,13 +35,6 @@ async function loadByMonthKey(
     salesTarget,
     updatedAt: null,
   };
-
-  const { data: ms } = await supabase
-    .from("monthly_setups")
-    .select("id, updated_at")
-    .eq("store_id", storeId)
-    .eq("year_month", yearMonth)
-    .maybeSingle();
 
   if (!ms) return empty;
 
