@@ -75,6 +75,21 @@ export function DashControls({
         >
           ▶
         </button>
+
+        {/* 日付を直接指定してジャンプ */}
+        <label className="flex items-center gap-1.5 text-xs text-muted">
+          日付を指定
+          <input
+            type="date"
+            value={refDate}
+            disabled={pending}
+            onChange={(e) => {
+              if (e.target.value) go({ d: e.target.value });
+            }}
+            className="rounded-md border border-line bg-surface px-2 py-1 text-sm text-foreground"
+          />
+        </label>
+
         {recordedDays > 0 ? (
           <span className="text-xs text-muted">
             記録 {recordedDays} 日

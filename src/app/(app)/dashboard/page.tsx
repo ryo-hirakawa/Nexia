@@ -18,16 +18,22 @@ import { DashControls } from "./controls";
 
 type Tone = "good" | "bad" | undefined;
 
-/** 前期比（％）。上がる方が良い指標向け。invert で下がる方が良い指標に。 */
-function deltaPct(cur: number, prev: number, invert = false): { text: string; tone: Tone } {
+/** 前期比（％）。上がる方が良い指標向け。invert で下がる方が良い指標に。
+ *  label を渡すと「前年同月比」など別のラベルで表示できる。 */
+function deltaPct(
+  cur: number,
+  prev: number,
+  invert = false,
+  label = "前期比",
+): { text: string; tone: Tone } {
   if (prev === 0) {
-    if (cur === 0) return { text: "前期比 ±0%", tone: undefined };
-    return { text: "前期データなし", tone: undefined };
+    if (cur === 0) return { text: `${label} ±0%`, tone: undefined };
+    return { text: `${label.replace("比", "")}データなし`, tone: undefined };
   }
   const r = (cur - prev) / prev;
   const sign = r > 0 ? "+" : r < 0 ? "" : "±";
   const tone: Tone = r === 0 ? undefined : (invert ? r < 0 : r > 0) ? "good" : "bad";
-  return { text: `前期比 ${sign}${(r * 100).toFixed(1)}%`, tone };
+  return { text: `${label} ${sign}${(r * 100).toFixed(1)}%`, tone };
 }
 
 /** ポイント差（比率どうしの差）。FL率など。下がる方が良い。 */
@@ -95,7 +101,7 @@ export default async function DashboardPage({
   const yearOverYear =
     view === "month"
       ? yearAgo && yearAgo.recordedDays > 0
-        ? deltaPct(d.sales, yearAgo.sales)
+        ? deltaPct(d.sales, yearAgo.sales, false, "前年同月比")
         : { text: "前年データ蓄積中（13ヶ月で自動表示）", tone: undefined as Tone }
       : null;
 
@@ -160,7 +166,7 @@ export default async function DashboardPage({
                   }
                 >
                   {salesDelta.text}
-                  {yearOverYear ? ` ・ 前年同月比 ${yearOverYear.text}` : ""}
+                  {yearOverYear ? ` ・ ${yearOverYear.text}` : ""}
                 </div>
                 {hasPrev ? (
                   <div className="[&_*]:!text-white">
@@ -270,20 +276,21 @@ export default async function DashboardPage({
             )}
           </Card>
 
-          {/* charts */}
-          <div className="grid gap-4 lg:grid-cols-2">
-            {d.dailyTrend.length > 0 ? (
-              <Card title="売上推移（日次）">
-                <TrendBars
-                  data={d.dailyTrend.map((t) => ({
-                    label: fmtMD(t.date),
-                    value: t.sales,
-                    dim: !t.hasRecord,
-                  }))}
-                />
-              </Card>
-            ) : null}
+          {/* 売上推移：時系列は横幅があるほど見やすいので単独で幅いっぱいに */}
+          {d.dailyTrend.length > 0 ? (
+            <Card title="売上推移（日次）">
+              <TrendBars
+                data={d.dailyTrend.map((t) => ({
+                  label: fmtMD(t.date),
+                  value: t.sales,
+                  dim: !t.hasRecord,
+                }))}
+              />
+            </Card>
+          ) : null}
 
+          {/* 内訳ドーナツ2枚。items-start で高さを揃えず、片方が短くても下に空白ができないようにする */}
+          <div className="grid items-start gap-4 lg:grid-cols-2">
             <Card title="費目別 経費">
               <CompositionDonut
                 data={d.costByClass.filter((c) => c.amount > 0).map((c) => ({
@@ -327,7 +334,10 @@ export default async function DashboardPage({
                 <Empty />
               )}
             </Card>
+          </div>
 
+          {/* 決済構成とキャストランキングはどちらも表形式で高さが近いのでペアにする */}
+          <div className="grid items-start gap-4 lg:grid-cols-2">
             <Card title="決済構成" bar="navy">
               {d.byPayment.length ? (
                 <table className="w-full text-sm">
@@ -349,35 +359,34 @@ export default async function DashboardPage({
                 <Empty />
               )}
             </Card>
-          </div>
 
-          {/* cast ranking */}
-          <Card title="キャスト別 売上ランキング" bar="orange">
-            {d.castRanking.length ? (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-muted">
-                    <th className="w-8 pb-1.5 text-left font-medium">#</th>
-                    <th className="pb-1.5 text-left font-medium">キャスト</th>
-                    <th className="pb-1.5 text-right font-medium">売上</th>
-                    <th className="pb-1.5 text-right font-medium">バック</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {d.castRanking.map((c, i) => (
-                    <tr key={c.name} className="border-b border-line last:border-0">
-                      <td className="py-1.5">{i === 0 ? "👑" : i + 1}</td>
-                      <td className="py-1.5 font-medium">{c.name}</td>
-                      <td className="py-1.5 text-right font-mono tabular-nums">{yen(c.sales)}</td>
-                      <td className="py-1.5 text-right font-mono tabular-nums text-muted">{yen(c.back)}</td>
+            <Card title="キャスト別 売上ランキング" bar="orange">
+              {d.castRanking.length ? (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-muted">
+                      <th className="w-8 pb-1.5 text-left font-medium">#</th>
+                      <th className="pb-1.5 text-left font-medium">キャスト</th>
+                      <th className="pb-1.5 text-right font-medium">売上</th>
+                      <th className="pb-1.5 text-right font-medium">バック</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <Empty />
-            )}
-          </Card>
+                  </thead>
+                  <tbody>
+                    {d.castRanking.map((c, i) => (
+                      <tr key={c.name} className="border-b border-line last:border-0">
+                        <td className="py-1.5">{i === 0 ? "👑" : i + 1}</td>
+                        <td className="py-1.5 font-medium">{c.name}</td>
+                        <td className="py-1.5 text-right font-mono tabular-nums">{yen(c.sales)}</td>
+                        <td className="py-1.5 text-right font-mono tabular-nums text-muted">{yen(c.back)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <Empty />
+              )}
+            </Card>
+          </div>
 
           {/* 曜日別平均 */}
           <Card title="曜日別 平均売上（直近90日）">
