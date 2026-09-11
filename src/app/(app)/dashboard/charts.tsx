@@ -263,18 +263,22 @@ export function WeekdayBars({
 /**
  * KPI カード用の当期/前期ミニ比較バー（recharts 不使用の軽量 HTML/CSS）。
  * 数値は省略せずそのままのラベルで表示する。
+ * ラベル文字列はサーバー側で整形済みのものを渡す（関数は Server → Client
+ * Component 境界を越えて渡せないため、フォーマット関数は受け取らない）。
  */
 export function MiniCompareBars({
   current,
   previous,
-  format,
+  currentLabel,
+  previousLabel,
 }: {
   current: number;
   previous: number;
-  format: (n: number) => string;
+  currentLabel: string;
+  previousLabel: string;
 }) {
   const max = Math.max(Math.abs(current), Math.abs(previous), 1);
-  const row = (label: string, value: number, color: string, muted?: boolean) => (
+  const row = (label: string, value: number, text: string, color: string, muted?: boolean) => (
     <div className="flex items-center gap-2">
       <span
         className="w-8 shrink-0 text-[10px]"
@@ -289,14 +293,14 @@ export function MiniCompareBars({
         />
       </span>
       <span className="w-[4.75rem] shrink-0 text-right font-mono text-[10px] tabular-nums" style={{ opacity: 0.85 }}>
-        {format(value)}
+        {text}
       </span>
     </div>
   );
   return (
     <div className="mt-2 space-y-1">
-      {row("当期", current, ORANGE)}
-      {row("前期", previous, LIGHT, true)}
+      {row("当期", current, currentLabel, ORANGE)}
+      {row("前期", previous, previousLabel, LIGHT, true)}
     </div>
   );
 }

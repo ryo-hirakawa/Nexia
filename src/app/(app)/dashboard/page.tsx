@@ -164,7 +164,12 @@ export default async function DashboardPage({
                 </div>
                 {hasPrev ? (
                   <div className="[&_*]:!text-white">
-                    <MiniCompareBars current={d.sales} previous={previous.sales} format={yen} />
+                    <MiniCompareBars
+                      current={d.sales}
+                      previous={previous.sales}
+                      currentLabel={yen(d.sales)}
+                      previousLabel={yen(previous.sales)}
+                    />
                   </div>
                 ) : null}
               </div>
@@ -177,7 +182,16 @@ export default async function DashboardPage({
               sub={`利益率 ${pct(d.operatingMarginRate)}`}
               tone={d.operatingProfit < 0 ? "bad" : "good"}
               delta={profitDelta}
-              compare={hasPrev ? { current: d.operatingProfit, previous: previous.operatingProfit, format: yen } : undefined}
+              compare={
+                hasPrev
+                  ? {
+                      current: d.operatingProfit,
+                      previous: previous.operatingProfit,
+                      currentLabel: yen(d.operatingProfit),
+                      previousLabel: yen(previous.operatingProfit),
+                    }
+                  : undefined
+              }
             />
             <Kpi
               k="FL コスト率"
@@ -186,7 +200,12 @@ export default async function DashboardPage({
               delta={flDelta}
               compare={
                 hasPrev && d.flRate !== null && previous.flRate !== null
-                  ? { current: d.flRate * 100, previous: previous.flRate * 100, format: (n) => n.toFixed(1) + "%" }
+                  ? {
+                      current: d.flRate * 100,
+                      previous: previous.flRate * 100,
+                      currentLabel: (d.flRate * 100).toFixed(1) + "%",
+                      previousLabel: (previous.flRate * 100).toFixed(1) + "%",
+                    }
                   : undefined
               }
             />
@@ -195,7 +214,16 @@ export default async function DashboardPage({
               v={`${d.guests} / ${d.avgSpend === null ? "—" : yen(d.avgSpend)}`}
               sub={`組数 ${d.groups}`}
               delta={guestDelta}
-              compare={hasPrev ? { current: d.guests, previous: previous.guests, format: (n) => `${Math.round(n)}人` } : undefined}
+              compare={
+                hasPrev
+                  ? {
+                      current: d.guests,
+                      previous: previous.guests,
+                      currentLabel: `${d.guests}人`,
+                      previousLabel: `${previous.guests}人`,
+                    }
+                  : undefined
+              }
             />
             <Kpi k="売掛残高" v={yen(d.receivableBalance)} sub="期間末時点" />
             {d.view === "month" && d.landingForecast !== null ? (
@@ -413,7 +441,7 @@ function Kpi({
   tone?: "good" | "bad";
   accent?: boolean;
   delta?: { text: string; tone: Tone };
-  compare?: { current: number; previous: number; format: (n: number) => string };
+  compare?: { current: number; previous: number; currentLabel: string; previousLabel: string };
 }) {
   return (
     <div
@@ -447,7 +475,12 @@ function Kpi({
         </div>
       ) : null}
       {compare ? (
-        <MiniCompareBars current={compare.current} previous={compare.previous} format={compare.format} />
+        <MiniCompareBars
+          current={compare.current}
+          previous={compare.previous}
+          currentLabel={compare.currentLabel}
+          previousLabel={compare.previousLabel}
+        />
       ) : null}
     </div>
   );
