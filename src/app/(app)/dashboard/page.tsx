@@ -4,8 +4,8 @@ import { requireMembership } from "@/lib/auth";
 import { jstDateString, yen, isValidDateStr } from "@/lib/daily";
 import { latestRecordedDate } from "@/lib/monthly-server";
 import { loadDashboardData, loadWeekdayAverages, loadMonthlyYoY } from "@/lib/dashboard-server";
-import { pct } from "@/lib/finance";
-import { fmtMDW, periodLabel, shiftRef, shiftYearRef, type DashView } from "@/lib/period";
+import { pct, monthLabel } from "@/lib/finance";
+import { addDays, fmtMDW, periodLabel, shiftRef, shiftYearRef, type DashView } from "@/lib/period";
 import {
   AchievementGauge,
   TrendBars,
@@ -222,6 +222,19 @@ export default async function DashboardPage({
                     }
                   : undefined
               }
+              footnote={
+                <details className="text-xs text-muted">
+                  <summary className="cursor-pointer select-none">算式を見る</summary>
+                  <p className="mt-1 leading-relaxed">
+                    営業利益 = 売上 −（原価 + 人件費 + 固定費 + 流動費）
+                    <br />
+                    含む: 月給スタッフ・固定費（家賃等）は期間の暦日数で按分、減価償却も費用として含む（現金支出ではない）。
+                    <br />
+                    含まない: 借入返済（元金相当）
+                    {d.hasLoanRepaymentLines ? "・下記参照" : "（設定なし）"}。
+                  </p>
+                </details>
+              }
             />
             <Kpi
               k="FL コスト率"
@@ -351,7 +364,27 @@ export default async function DashboardPage({
                 </div>
               ) : null}
               <p className="mt-3 text-xs text-muted">
-                固定費・月給スタッフ（日割り）は記録日数ぶんの累計。人件費＝時給＋日払い＋キャストバック＋月給スタッフ。
+                固定費・月給スタッフは、休業日や未入力日があっても発生する費用として、対象期間の暦日数で按分（月が終了していれば設定額の全額）。人件費＝時給＋日払い＋キャストバック＋月給スタッフ。
+              </p>
+              {view === "month" && !d.isMonthComplete ? (
+                <p className="mt-1 text-xs text-muted">
+                  今月末までの見込み: 固定費 {yen(d.fixedMonthlyTotal)}・月給 {yen(d.staffMonthlyTotal)}
+                  （現時点までの実績按分: 固定費 {yen(d.fixedProrated)}・月給 {yen(d.laborStaffProrated)}）
+                </p>
+              ) : null}
+              {d.hasLoanRepaymentLines ? (
+                <p className="mt-1 text-xs text-muted">
+                  借入返済（参考・営業利益には含めない）: {yen(d.loanRepaymentProrated)}
+                  ・元金/利息の内訳は未設定です
+                </p>
+              ) : null}
+              {d.hasDepreciationLines ? (
+                <p className="mt-1 text-xs text-muted">
+                  うち減価償却 {yen(d.depreciationProrated)} は費用として含みますが、現金の支出ではありません
+                </p>
+              ) : null}
+              <p className="mt-1 text-xs text-muted">
+                原価（仕入れ）は仕入額をそのまま計上しています（棚卸は反映していません）
               </p>
             </Card>
 
@@ -428,6 +461,12 @@ export default async function DashboardPage({
                 <p className="mt-2 text-xs text-muted">
                   オレンジ＝平均売上が最も高い曜日。シフトや仕入れの目安に。
                 </p>
+                <p className="mt-1 text-xs text-muted">
+                  対象期間: {fmtMDW(addDays(refDate, -90))} 〜 {fmtMDW(refDate)}
+                  {" ・ "}
+                  集計日数:{" "}
+                  {weekday.map((w) => `${w.label}${w.days}日`).join(" ")}
+                </p>
               </>
             ) : (
               <Empty />
@@ -442,10 +481,25 @@ export default async function DashboardPage({
                   <MonthlyYoYBars
                     data={monthlyYoY.map((m) => ({ label: m.label, cur: m.curSales, prev: m.prevSales }))}
                   />
-                  <p className="mt-2 text-right text-xs text-muted">
+                  <p className="mt-2 text-xs text-muted">
+                    今年 = {monthLabel(monthlyYoY[0].monthKey)} 〜{" "}
+                    {monthLabel(monthlyYoY[monthlyYoY.length - 1].monthKey)}
+                    {" ・ "}
+                    昨年 = 同期間の1年前（各月とも同じ月同士で比較）
+                  </p>
+                  <p className="mt-1 text-right text-xs text-muted">
                     今年計 {yen(monthlyYoY.reduce((s, m) => s + m.curSales, 0))}（昨年計{" "}
                     {yen(monthlyYoY.reduce((s, m) => s + m.prevSales, 0))}）
                   </p>
+                  {monthlyYoY.some((m) => !m.hasPrev) ? (
+                    <p className="mt-1 text-xs text-muted">
+                      {monthlyYoY
+                        .filter((m) => !m.hasPrev)
+                        .map((m) => m.label)
+                        .join("・")}
+                      は前年データなし（比較データなし）
+                    </p>
+                  ) : null}
                 </>
               ) : (
                 <Empty />
@@ -494,6 +548,7 @@ function Kpi({
   accent,
   delta,
   compare,
+  footnote,
 }: {
   k: string;
   v: string;
@@ -509,6 +564,7 @@ function Kpi({
     curTag: string;
     prevTag: string;
   };
+  footnote?: React.ReactNode;
 }) {
   return (
     <div
@@ -551,6 +607,7 @@ function Kpi({
           prevTag={compare.prevTag}
         />
       ) : null}
+      {footnote ? <div className="mt-2 border-t border-line pt-2">{footnote}</div> : null}
     </div>
   );
 }

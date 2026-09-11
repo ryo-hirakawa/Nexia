@@ -1,5 +1,14 @@
 import { createClient } from "@/lib/supabase/server";
-import { daysInMonth, monthKeyOf, proratedFixed, proratedStaff } from "@/lib/finance";
+import {
+  daysInMonth,
+  monthKeyOf,
+  proratedFixed,
+  proratedStaff,
+  proratedLoanRepayment,
+  proratedDepreciation,
+  fixedMonthlyTotal,
+  staffMonthlyTotal,
+} from "@/lib/finance";
 import {
   periodRange,
   datesInRange,
@@ -34,6 +43,21 @@ export type DashboardData = {
   cogsRate: number | null;
   laborRate: number | null;
   operatingMarginRate: number | null;
+
+  // 集計対象の暦日数（休業日・未入力日も含む「日数」。記録がある日数ではない）
+  calendarDays: number;
+  // 対象月がこの集計時点で終了しているか（月ビューで、月末まで含む場合）
+  isMonthComplete: boolean;
+  // 固定費・月給の「月末までの設定額（未按分・見込み）」。実績（fixedProrated /
+  // laborStaffProrated）との対比表示用。
+  fixedMonthlyTotal: number;
+  staffMonthlyTotal: number;
+  // 借入返済（元金・利息の内訳は未設定のため営業利益には含まない。参考表示専用）
+  loanRepaymentProrated: number;
+  hasLoanRepaymentLines: boolean;
+  // 減価償却（固定費に含めて費用計上するが、現金支出ではない旨の表示用）
+  depreciationProrated: number;
+  hasDepreciationLines: boolean;
 
   salesTarget: number;
   targetRate: number | null;
@@ -97,8 +121,10 @@ export async function loadDashboardData(
       : Promise.resolve({ data: [] as { direction: string; amount: number }[] }),
   ]);
 
-  const fixedPerDay = proratedFixed(setup, dim);
-  const staffPerDay = proratedStaff(setup, dim);
+  // 集計範囲に含まれる暦日数（記録の有無・休業日は問わない）。
+  // 固定費・月給は「記録がある日数」ではなくこの暦日数で按分する。
+  const calendarDays = datesInRange(range.start, range.end).length;
+  const isMonthComplete = view === "month" && calendarDays >= dim;
 
   const records = recsResult.data ?? [];
   const recordedDays = records.length;
@@ -183,8 +209,17 @@ export async function loadDashboardData(
   const cogs = sumClass("cogs");
   const laborDaily = sumClass("labor");
   const variable = sumClass("variable");
-  const fixedProrated = fixedPerDay * recordedDays;
-  const laborStaffProrated = staffPerDay * recordedDays;
+  // 固定費・月給は「記録がある日数」ではなく暦日数（calendarDays）で按分する。
+  // 休業日・未入力日でも家賃や月給は発生するため。月が終了していれば
+  // （calendarDays >= dim）設定額の全額になる。
+  const fixedProrated = proratedFixed(setup, dim, calendarDays);
+  const laborStaffProrated = proratedStaff(setup, dim, calendarDays);
+  // 借入返済（元金・利息の内訳未設定）は営業利益に含めない。参考表示専用。
+  const loanRepaymentProrated = proratedLoanRepayment(setup, dim, calendarDays);
+  const hasLoanRepaymentLines = (setup?.fixedLines ?? []).some((l) => l.category.includes("借入"));
+  // 減価償却は固定費（費用）に含めたまま計上するが、非資金費用として別掲する
+  const depreciationProrated = proratedDepreciation(setup, dim, calendarDays);
+  const hasDepreciationLines = (setup?.fixedLines ?? []).some((l) => l.category.includes("減価償却"));
   const labor = laborDaily + laborStaffProrated;
   const totalCost = cogs + labor + variable + fixedProrated;
   const operatingProfit = sales - totalCost;
@@ -289,6 +324,14 @@ export async function loadDashboardData(
     cogsRate: rate(cogs, sales),
     laborRate: rate(labor, sales),
     operatingMarginRate: rate(operatingProfit, sales),
+    calendarDays,
+    isMonthComplete,
+    fixedMonthlyTotal: fixedMonthlyTotal(setup),
+    staffMonthlyTotal: staffMonthlyTotal(setup),
+    loanRepaymentProrated,
+    hasLoanRepaymentLines,
+    depreciationProrated,
+    hasDepreciationLines,
     salesTarget,
     targetRate: salesTarget > 0 ? sales / salesTarget : null,
     landingForecast,
