@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireMembership } from "@/lib/auth";
 import { jstDateString, yen, isValidDateStr } from "@/lib/daily";
 import { latestRecordedDate } from "@/lib/monthly-server";
-import { loadDashboardData, loadWeekdayAverages } from "@/lib/dashboard-server";
+import { loadDashboardData, loadWeekdayAverages, loadMonthlyYoY } from "@/lib/dashboard-server";
 import { pct } from "@/lib/finance";
 import { fmtMDW, periodLabel, shiftRef, shiftYearRef, type DashView } from "@/lib/period";
 import {
@@ -13,6 +13,7 @@ import {
   CostCompareBars,
   WeekdayBars,
   MiniCompareBars,
+  MonthlyYoYBars,
 } from "./charts";
 import { DashControls } from "./controls";
 
@@ -93,11 +94,12 @@ export default async function DashboardPage({
   const prevRefDate = shiftRef(view, refDate, -1);
   const yearAgoRefDate = view === "month" ? shiftYearRef(refDate, -1) : null;
 
-  const [d, previous, yearAgo, weekday] = await Promise.all([
+  const [d, previous, yearAgo, weekday, monthlyYoY] = await Promise.all([
     loadDashboardData(store.id, view, refDate),
     loadDashboardData(store.id, view, prevRefDate),
     yearAgoRefDate ? loadDashboardData(store.id, "month", yearAgoRefDate) : null,
     loadWeekdayAverages(store.id, refDate),
+    view === "month" ? loadMonthlyYoY(store.id, refDate) : null,
   ]);
   const costTotal = d.cogs + d.labor + d.fixedProrated + d.variable;
   const prevCostTotal = previous.cogs + previous.labor + previous.fixedProrated + previous.variable;
@@ -428,6 +430,25 @@ export default async function DashboardPage({
               <Empty />
             )}
           </Card>
+
+          {/* 月別 前年比較（月ビューのみ） */}
+          {monthlyYoY ? (
+            <Card title="月別売上（今年 vs 昨年・直近12ヶ月）">
+              {monthlyYoY.some((m) => m.hasCur || m.hasPrev) ? (
+                <>
+                  <MonthlyYoYBars
+                    data={monthlyYoY.map((m) => ({ label: m.label, cur: m.curSales, prev: m.prevSales }))}
+                  />
+                  <p className="mt-2 text-right text-xs text-muted">
+                    今年計 {yen(monthlyYoY.reduce((s, m) => s + m.curSales, 0))}（昨年計{" "}
+                    {yen(monthlyYoY.reduce((s, m) => s + m.prevSales, 0))}）
+                  </p>
+                </>
+              ) : (
+                <Empty />
+              )}
+            </Card>
+          ) : null}
         </>
       )}
     </div>

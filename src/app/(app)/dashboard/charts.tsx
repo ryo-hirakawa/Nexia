@@ -47,8 +47,9 @@ const PIE_COLORS = [
 ];
 
 const yen0 = (n: number) => "¥" + Math.round(n).toLocaleString("ja-JP");
-/** グラフのラベル用：千円単位の "k" ではなく日本語の「万」で表示 */
-const manLabel = (n: number) => (n ? Math.round(n / 10000).toLocaleString("ja-JP") + "万" : "");
+/** グラフのラベル用：千円単位の "k" ではなく日本語の「万」で表示。
+ *  0 は空欄にせず "0" と明示する（定休日などを「未入力」と誤解させないため）。 */
+const manLabel = (n: number) => (n ? Math.round(n / 10000).toLocaleString("ja-JP") + "万" : "0");
 
 /** 目標達成率のゲージ（0〜120%+） */
 export function AchievementGauge({ rate }: { rate: number | null }) {
@@ -106,7 +107,7 @@ export function TrendBars({
             tickLine={false}
             interval="preserveStartEnd"
           />
-          <Bar dataKey="value" radius={[3, 3, 0, 0]} maxBarSize={26} isAnimationActive={false}>
+          <Bar dataKey="value" radius={[3, 3, 0, 0]} maxBarSize={26} minPointSize={2} isAnimationActive={false}>
             {data.map((d, i) => (
               <Cell key={i} fill={d.dim ? TRACK : NAVY} />
             ))}
@@ -213,8 +214,8 @@ export function CostCompareBars({
             wrapperStyle={{ fontSize: 11, color: "var(--muted)" }}
             formatter={(v) => (v === "current" ? curLabel : prevLabel)}
           />
-          <Bar dataKey="current" name="current" fill={NAVY} radius={[3, 3, 0, 0]} maxBarSize={28} isAnimationActive={false} />
-          <Bar dataKey="previous" name="previous" fill={LIGHT} radius={[3, 3, 0, 0]} maxBarSize={28} isAnimationActive={false} />
+          <Bar dataKey="current" name="current" fill={NAVY} radius={[3, 3, 0, 0]} maxBarSize={28} minPointSize={2} isAnimationActive={false} />
+          <Bar dataKey="previous" name="previous" fill={LIGHT} radius={[3, 3, 0, 0]} maxBarSize={28} minPointSize={2} isAnimationActive={false} />
         </BarChart>
       ) : null}
     </div>
@@ -244,7 +245,7 @@ export function WeekdayBars({
             axisLine={{ stroke: TRACK }}
             tickLine={false}
           />
-          <Bar dataKey="avg" radius={[3, 3, 0, 0]} maxBarSize={36} isAnimationActive={false}>
+          <Bar dataKey="avg" radius={[3, 3, 0, 0]} maxBarSize={36} minPointSize={2} isAnimationActive={false}>
             {data.map((d, i) => (
               <Cell key={i} fill={d.avg === max && max > 0 ? ORANGE : NAVY} />
             ))}
@@ -310,6 +311,56 @@ export function MiniCompareBars({
     <div className="mt-2 space-y-1">
       {row(curTag, current, currentLabel, ORANGE)}
       {row(prevTag, previous, previousLabel, LIGHT, true)}
+    </div>
+  );
+}
+
+/** 月別売上：今年 vs 前年同月（直近12ヶ月・グループ棒）。月ビュー専用。 */
+export function MonthlyYoYBars({
+  data,
+}: {
+  data: { label: string; cur: number; prev: number }[];
+}) {
+  const [ref, w] = useWidth();
+  return (
+    <div ref={ref} className="h-64 w-full">
+      {w > 0 ? (
+        <BarChart
+          width={w}
+          height={256}
+          data={data}
+          margin={{ top: 20, right: 8, bottom: 0, left: 8 }}
+        >
+          <XAxis
+            dataKey="label"
+            tick={{ fontSize: 10, fill: MUTED }}
+            axisLine={{ stroke: TRACK }}
+            tickLine={false}
+          />
+          <Legend
+            verticalAlign="top"
+            height={24}
+            wrapperStyle={{ fontSize: 11, color: "var(--muted)" }}
+            formatter={(v) => (v === "cur" ? "今年" : "昨年")}
+          />
+          <Bar dataKey="cur" name="cur" fill={NAVY} radius={[2, 2, 0, 0]} maxBarSize={18} minPointSize={2} isAnimationActive={false}>
+            <LabelList
+              dataKey="cur"
+              position="top"
+              formatter={(v) => manLabel(Number(v) || 0)}
+              style={{ fontSize: 8, fill: MUTED }}
+            />
+          </Bar>
+          <Bar dataKey="prev" name="prev" fill={LIGHT} radius={[2, 2, 0, 0]} maxBarSize={18} minPointSize={2} isAnimationActive={false}>
+            <LabelList
+              dataKey="prev"
+              position="top"
+              formatter={(v) => manLabel(Number(v) || 0)}
+              style={{ fontSize: 8, fill: MUTED }}
+            />
+          </Bar>
+        </BarChart>
+      ) : null}
     </div>
   );
 }

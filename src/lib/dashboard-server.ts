@@ -313,3 +313,69 @@ export async function loadWeekdayAverages(
     days: buckets[dow].count,
   }));
 }
+
+export type MonthlyYoY = {
+  monthKey: string; // "YYYY-MM"
+  label: string; // "9月"
+  curSales: number;
+  prevSales: number;
+  hasCur: boolean;
+  hasPrev: boolean;
+};
+
+/** 直近 months ヶ月（既定12）ぶんの月別売上と、その前年同月の売上を並べる */
+export async function loadMonthlyYoY(
+  storeId: string,
+  refDate: string,
+  months = 12,
+): Promise<MonthlyYoY[]> {
+  const supabase = await createClient();
+  const [ey, em] = [Number(refDate.slice(0, 4)), Number(refDate.slice(5, 7))];
+
+  const keys: string[] = [];
+  for (let i = months - 1; i >= 0; i--) {
+    let yy = ey;
+    let mm = em - i;
+    while (mm <= 0) {
+      mm += 12;
+      yy -= 1;
+    }
+    keys.push(`${yy}-${String(mm).padStart(2, "0")}`);
+  }
+
+  const [fy, fm] = keys[0].split("-").map(Number);
+  const rangeStart = `${fy - 1}-${String(fm).padStart(2, "0")}-01`;
+  const [ly, lm] = keys[keys.length - 1].split("-").map(Number);
+  const rangeEnd = `${ly}-${String(lm).padStart(2, "0")}-${String(daysInMonth(keys[keys.length - 1])).padStart(2, "0")}`;
+
+  const { data } = await supabase
+    .from("daily_records")
+    .select("business_date, total_sales")
+    .eq("store_id", storeId)
+    .gte("business_date", rangeStart)
+    .lte("business_date", rangeEnd);
+
+  const sums = new Map<string, { sum: number; has: boolean }>();
+  for (const r of data ?? []) {
+    const mk = r.business_date.slice(0, 7);
+    const cur = sums.get(mk) ?? { sum: 0, has: false };
+    cur.sum += Number(r.total_sales);
+    cur.has = true;
+    sums.set(mk, cur);
+  }
+
+  return keys.map((k) => {
+    const [yy, mm] = k.split("-").map(Number);
+    const prevKey = `${yy - 1}-${String(mm).padStart(2, "0")}`;
+    const cur = sums.get(k);
+    const prev = sums.get(prevKey);
+    return {
+      monthKey: k,
+      label: `${mm}月`,
+      curSales: cur?.sum ?? 0,
+      prevSales: prev?.sum ?? 0,
+      hasCur: cur?.has ?? false,
+      hasPrev: prev?.has ?? false,
+    };
+  });
+}
