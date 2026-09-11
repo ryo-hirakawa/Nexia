@@ -9,7 +9,7 @@ import {
   loadMonthlyYoY,
   type DashboardData,
 } from "@/lib/dashboard-server";
-import { pct, monthLabel } from "@/lib/finance";
+import { pct, monthLabel, daysInMonth } from "@/lib/finance";
 import { addDays, fmtMDW, periodLabel, shiftRef, shiftYearRef, type DashView } from "@/lib/period";
 import {
   AchievementGauge,
@@ -202,6 +202,20 @@ export default async function DashboardPage({
         : { text: "前年データ蓄積中（13ヶ月で自動表示）", tone: undefined as Tone }
       : null;
 
+  // 月末着地予測の表示状態。計算式（dashboard-server.ts の landingForecast）は
+  // 変更せず、UI 側で「終了済みの月／データ不足／計算可能」の3状態を出し分ける。
+  const dayOfMonth = Number(refDate.slice(8));
+  const forecastState: "complete" | "insufficient" | "ready" =
+    view !== "month"
+      ? "insufficient"
+      : d.isMonthComplete
+        ? "complete"
+        : d.landingForecast === null
+          ? "insufficient"
+          : "ready";
+  const forecastGap =
+    d.landingForecast !== null && d.salesTarget > 0 ? d.landingForecast - d.salesTarget : null;
+
   const insights = buildInsights({
     view,
     missingDays,
@@ -293,12 +307,49 @@ export default async function DashboardPage({
               }
               aside={d.salesTarget > 0 ? <AchievementGauge rate={d.targetRate} /> : undefined}
               footnote={
-                view === "month" && d.landingForecast !== null ? (
+                view !== "month" ? undefined : forecastState === "complete" ? (
                   <p className="text-xs text-muted">
-                    月末着地予測: {yen(d.landingForecast)}
-                    {d.salesTarget > 0 ? `（対目標 ${pct(d.landingForecast / d.salesTarget)}）` : ""}
+                    この月は終了しているため、月末着地予測ではなく確定した実績を表示しています。
                   </p>
-                ) : undefined
+                ) : forecastState === "insufficient" ? (
+                  <p className="text-xs text-warn">月末着地予測: 予測に必要なデータ不足</p>
+                ) : (
+                  <div className="rounded-lg bg-surface-2 p-2.5">
+                    <p className="text-xs font-semibold text-muted">月末売上予想（進行中の月）</p>
+                    <div className="mt-1.5 space-y-1 text-xs">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-muted">月末売上予想</span>
+                        <span className="overflow-x-auto whitespace-nowrap font-mono font-bold tabular-nums">
+                          {yen(d.landingForecast as number)}
+                        </span>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-muted">目標との差額</span>
+                        <span
+                          className={
+                            "overflow-x-auto whitespace-nowrap font-mono font-bold tabular-nums " +
+                            (forecastGap === null ? "" : toneTextClass(forecastGap >= 0 ? "good" : "bad"))
+                          }
+                        >
+                          {forecastGap === null ? "目標未設定" : (forecastGap >= 0 ? "+" : "") + yen(forecastGap)}
+                        </span>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-muted">予想達成率</span>
+                        <span className="overflow-x-auto whitespace-nowrap font-mono font-bold tabular-nums">
+                          {d.salesTarget > 0 ? pct((d.landingForecast as number) / d.salesTarget) : "—"}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs text-muted">
+                      基準日: {fmtMDW(refDate)}時点の実績 {yen(d.sales)}（{dayOfMonth}日経過）を月{daysInMonth(refDate)}
+                      日換算。未入力日は0円として計算するため、未入力があると予想は低めに出ます。
+                    </p>
+                    <p className="mt-1 text-xs text-muted">
+                      定休日も含めた暦日ベースの単純な日割り予測です（曜日ごとの傾向は考慮していません）。
+                    </p>
+                  </div>
+                )
               }
             />
             <Kpi
