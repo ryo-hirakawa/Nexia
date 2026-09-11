@@ -181,11 +181,15 @@ export function CompositionDonut({
 
 const LIGHT = "#9aa4b2";
 
-/** 費目別経費：当期 vs 前期（グループ棒） */
+/** 費目別経費：当該期間 vs 比較対象期間（グループ棒）。ラベルは呼び出し側（日/週/月）で指定。 */
 export function CostCompareBars({
   data,
+  curLabel,
+  prevLabel,
 }: {
   data: { label: string; current: number; previous: number }[];
+  curLabel: string;
+  prevLabel: string;
 }) {
   const [ref, w] = useWidth();
   return (
@@ -207,7 +211,7 @@ export function CostCompareBars({
             verticalAlign="top"
             height={24}
             wrapperStyle={{ fontSize: 11, color: "var(--muted)" }}
-            formatter={(v) => (v === "current" ? "当期" : "前期")}
+            formatter={(v) => (v === "current" ? curLabel : prevLabel)}
           />
           <Bar dataKey="current" name="current" fill={NAVY} radius={[3, 3, 0, 0]} maxBarSize={28} isAnimationActive={false} />
           <Bar dataKey="previous" name="previous" fill={LIGHT} radius={[3, 3, 0, 0]} maxBarSize={28} isAnimationActive={false} />
@@ -261,8 +265,9 @@ export function WeekdayBars({
 }
 
 /**
- * KPI カード用の当期/前期ミニ比較バー（recharts 不使用の軽量 HTML/CSS）。
- * 数値は省略せずそのままのラベルで表示する。
+ * KPI カード用の当該期間/比較対象期間ミニ比較バー（recharts 不使用の軽量 HTML/CSS）。
+ * 数値は省略せずそのままのラベルで表示する。行の見出し（当日/前日 等）は
+ * 呼び出し側（日/週/月ビュー）で決めて渡す。
  * ラベル文字列はサーバー側で整形済みのものを渡す（関数は Server → Client
  * Component 境界を越えて渡せないため、フォーマット関数は受け取らない）。
  */
@@ -271,11 +276,15 @@ export function MiniCompareBars({
   previous,
   currentLabel,
   previousLabel,
+  curTag,
+  prevTag,
 }: {
   current: number;
   previous: number;
   currentLabel: string;
   previousLabel: string;
+  curTag: string;
+  prevTag: string;
 }) {
   const max = Math.max(Math.abs(current), Math.abs(previous), 1);
   const row = (label: string, value: number, text: string, color: string, muted?: boolean) => (
@@ -299,8 +308,8 @@ export function MiniCompareBars({
   );
   return (
     <div className="mt-2 space-y-1">
-      {row("当期", current, currentLabel, ORANGE)}
-      {row("前期", previous, previousLabel, LIGHT, true)}
+      {row(curTag, current, currentLabel, ORANGE)}
+      {row(prevTag, previous, previousLabel, LIGHT, true)}
     </div>
   );
 }

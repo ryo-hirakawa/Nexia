@@ -60,6 +60,11 @@ export function fmtMD(d: string): string {
   return `${Number(m)}/${Number(day)}`;
 }
 
+/** 月/日 + 曜日。例: "8/31(月)" — グラフの日付ラベルなど、曜日を併記したい箇所用 */
+export function fmtMDW(d: string): string {
+  return `${fmtMD(d)}(${weekdayJa(d)})`;
+}
+
 export function periodLabel(view: DashView, ref: string): string {
   const [y, m] = ref.split("-").map(Number);
   if (view === "day") return `${y}年${m}月${Number(ref.slice(8))}日（${weekdayJa(ref)}）`;

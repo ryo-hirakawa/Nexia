@@ -5,7 +5,7 @@ import { jstDateString, yen, isValidDateStr } from "@/lib/daily";
 import { latestRecordedDate } from "@/lib/monthly-server";
 import { loadDashboardData, loadWeekdayAverages } from "@/lib/dashboard-server";
 import { pct } from "@/lib/finance";
-import { fmtMD, periodLabel, shiftRef, shiftYearRef, type DashView } from "@/lib/period";
+import { fmtMDW, periodLabel, shiftRef, shiftYearRef, type DashView } from "@/lib/period";
 import {
   AchievementGauge,
   TrendBars,
@@ -18,31 +18,45 @@ import { DashControls } from "./controls";
 
 type Tone = "good" | "bad" | undefined;
 
-/** 前期比（％）。上がる方が良い指標向け。invert で下がる方が良い指標に。
- *  label を渡すと「前年同月比」など別のラベルで表示できる。 */
+/** 「期」は使わず、ビューに応じて日/週/月で表記する。 */
+const CUR_LABEL: Record<DashView, string> = { day: "当日", week: "当週", month: "当月" };
+const PREV_LABEL: Record<DashView, string> = { day: "前日", week: "前週", month: "前月" };
+const DELTA_LABEL: Record<DashView, string> = { day: "前日比", week: "前週比", month: "前月比" };
+
+/** 比較対象との差（％）。上がる方が良い指標向け。invert で下がる方が良い指標に。
+ *  label を渡すと「前月比」「前年同月比」など表示ラベルを切り替えられる。
+ *  短い差分だけの表記（表の差分列など）用に short も返す。 */
 function deltaPct(
   cur: number,
   prev: number,
   invert = false,
-  label = "前期比",
-): { text: string; tone: Tone } {
+  label = "前月比",
+): { text: string; tone: Tone; short: string } {
   if (prev === 0) {
-    if (cur === 0) return { text: `${label} ±0%`, tone: undefined };
-    return { text: `${label.replace("比", "")}データなし`, tone: undefined };
+    if (cur === 0) return { text: `${label} ±0%`, tone: undefined, short: "±0%" };
+    return { text: `${label.replace("比", "")}データなし`, tone: undefined, short: "データなし" };
   }
   const r = (cur - prev) / prev;
   const sign = r > 0 ? "+" : r < 0 ? "" : "±";
   const tone: Tone = r === 0 ? undefined : (invert ? r < 0 : r > 0) ? "good" : "bad";
-  return { text: `${label} ${sign}${(r * 100).toFixed(1)}%`, tone };
+  const short = `${sign}${(r * 100).toFixed(1)}%`;
+  return { text: `${label} ${short}`, tone, short };
 }
 
 /** ポイント差（比率どうしの差）。FL率など。下がる方が良い。 */
-function deltaPt(cur: number | null, prev: number | null): { text: string; tone: Tone } {
-  if (cur === null || prev === null) return { text: "前期データなし", tone: undefined };
+function deltaPt(
+  cur: number | null,
+  prev: number | null,
+  label = "前月比",
+): { text: string; tone: Tone; short: string } {
+  if (cur === null || prev === null) {
+    return { text: `${label.replace("比", "")}データなし`, tone: undefined, short: "データなし" };
+  }
   const diff = (cur - prev) * 100;
   const sign = diff > 0 ? "+" : diff < 0 ? "" : "±";
   const tone: Tone = diff === 0 ? undefined : diff < 0 ? "good" : "bad";
-  return { text: `前期比 ${sign}${diff.toFixed(1)}pt`, tone };
+  const short = `${sign}${diff.toFixed(1)}pt`;
+  return { text: `${label} ${short}`, tone, short };
 }
 
 export default async function DashboardPage({
@@ -89,14 +103,15 @@ export default async function DashboardPage({
   const prevCostTotal = previous.cogs + previous.labor + previous.fixedProrated + previous.variable;
   const hasPrev = previous.recordedDays > 0;
 
-  const salesDelta = deltaPct(d.sales, previous.sales);
-  const profitDelta = deltaPct(d.operatingProfit, previous.operatingProfit);
-  const flDelta = deltaPt(d.flRate, previous.flRate);
-  const guestDelta = deltaPct(d.guests, previous.guests);
+  const deltaLabel = DELTA_LABEL[view];
+  const salesDelta = deltaPct(d.sales, previous.sales, false, deltaLabel);
+  const profitDelta = deltaPct(d.operatingProfit, previous.operatingProfit, false, deltaLabel);
+  const flDelta = deltaPt(d.flRate, previous.flRate, deltaLabel);
+  const guestDelta = deltaPct(d.guests, previous.guests, false, deltaLabel);
   const avgSpendDelta =
     d.avgSpend !== null && previous.avgSpend !== null
-      ? deltaPct(d.avgSpend, previous.avgSpend)
-      : { text: "前期データなし", tone: undefined as Tone };
+      ? deltaPct(d.avgSpend, previous.avgSpend, false, deltaLabel)
+      : { text: `${PREV_LABEL[view]}データなし`, tone: undefined as Tone, short: "データなし" };
 
   const yearOverYear =
     view === "month"
@@ -175,6 +190,8 @@ export default async function DashboardPage({
                       previous={previous.sales}
                       currentLabel={yen(d.sales)}
                       previousLabel={yen(previous.sales)}
+                      curTag={CUR_LABEL[view]}
+                      prevTag={PREV_LABEL[view]}
                     />
                   </div>
                 ) : null}
@@ -195,6 +212,8 @@ export default async function DashboardPage({
                       previous: previous.operatingProfit,
                       currentLabel: yen(d.operatingProfit),
                       previousLabel: yen(previous.operatingProfit),
+                      curTag: CUR_LABEL[view],
+                      prevTag: PREV_LABEL[view],
                     }
                   : undefined
               }
@@ -211,6 +230,8 @@ export default async function DashboardPage({
                       previous: previous.flRate * 100,
                       currentLabel: (d.flRate * 100).toFixed(1) + "%",
                       previousLabel: (previous.flRate * 100).toFixed(1) + "%",
+                      curTag: CUR_LABEL[view],
+                      prevTag: PREV_LABEL[view],
                     }
                   : undefined
               }
@@ -227,6 +248,8 @@ export default async function DashboardPage({
                       previous: previous.guests,
                       currentLabel: `${d.guests}人`,
                       previousLabel: `${previous.guests}人`,
+                      curTag: CUR_LABEL[view],
+                      prevTag: PREV_LABEL[view],
                     }
                   : undefined
               }
@@ -246,15 +269,15 @@ export default async function DashboardPage({
             ) : null}
           </div>
 
-          {/* 前期比較サマリー */}
-          <Card title={`前期比較（前期：${periodLabel(view, prevRefDate)}）`}>
+          {/* 比較サマリー */}
+          <Card title={`${PREV_LABEL[view]}比較（${PREV_LABEL[view]}：${periodLabel(view, prevRefDate)}）`}>
             {hasPrev ? (
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-xs text-muted">
                     <th className="pb-1.5 text-left font-medium">指標</th>
-                    <th className="pb-1.5 text-right font-medium">当期</th>
-                    <th className="pb-1.5 text-right font-medium">前期</th>
+                    <th className="pb-1.5 text-right font-medium">{CUR_LABEL[view]}</th>
+                    <th className="pb-1.5 text-right font-medium">{PREV_LABEL[view]}</th>
                     <th className="pb-1.5 text-right font-medium">差分</th>
                   </tr>
                 </thead>
@@ -272,7 +295,7 @@ export default async function DashboardPage({
                 </tbody>
               </table>
             ) : (
-              <p className="text-sm text-muted">前期の記録がまだありません。</p>
+              <p className="text-sm text-muted">{PREV_LABEL[view]}の記録がまだありません。</p>
             )}
           </Card>
 
@@ -281,7 +304,7 @@ export default async function DashboardPage({
             <Card title="売上推移（日次）">
               <TrendBars
                 data={d.dailyTrend.map((t) => ({
-                  label: fmtMD(t.date),
+                  label: fmtMDW(t.date),
                   value: t.sales,
                   dim: !t.hasRecord,
                 }))}
@@ -304,7 +327,9 @@ export default async function DashboardPage({
               <Detail title="流動費の内訳" items={d.variableByItem} />
               {hasPrev ? (
                 <div className="mt-3 border-t border-line pt-3">
-                  <p className="mb-1 text-xs text-muted">当期 vs 前期</p>
+                  <p className="mb-1 text-xs text-muted">
+                    {CUR_LABEL[view]} vs {PREV_LABEL[view]}
+                  </p>
                   <CostCompareBars
                     data={d.costByClass.map((c) => ({
                       label: c.label,
@@ -312,9 +337,11 @@ export default async function DashboardPage({
                       previous:
                         previous.costByClass.find((p) => p.key === c.key)?.amount ?? 0,
                     }))}
+                    curLabel={CUR_LABEL[view]}
+                    prevLabel={PREV_LABEL[view]}
                   />
                   <p className="mt-1 text-right text-xs text-muted">
-                    経費計 {yen(costTotal)}（前期 {yen(prevCostTotal)}）
+                    経費計 {yen(costTotal)}（{PREV_LABEL[view]} {yen(prevCostTotal)}）
                   </p>
                 </div>
               ) : null}
@@ -416,7 +443,7 @@ function CompareRow({
   label: string;
   cur: string;
   prev: string;
-  delta: { text: string; tone: Tone };
+  delta: { short: string; tone: Tone };
 }) {
   return (
     <tr className="border-b border-line last:border-0">
@@ -429,7 +456,7 @@ function CompareRow({
           (delta.tone === "good" ? "text-good" : delta.tone === "bad" ? "text-bad" : "text-muted")
         }
       >
-        {delta.text.replace("前期比 ", "")}
+        {delta.short}
       </td>
     </tr>
   );
@@ -450,7 +477,14 @@ function Kpi({
   tone?: "good" | "bad";
   accent?: boolean;
   delta?: { text: string; tone: Tone };
-  compare?: { current: number; previous: number; currentLabel: string; previousLabel: string };
+  compare?: {
+    current: number;
+    previous: number;
+    currentLabel: string;
+    previousLabel: string;
+    curTag: string;
+    prevTag: string;
+  };
 }) {
   return (
     <div
@@ -489,6 +523,8 @@ function Kpi({
           previous={compare.previous}
           currentLabel={compare.currentLabel}
           previousLabel={compare.previousLabel}
+          curTag={compare.curTag}
+          prevTag={compare.prevTag}
         />
       ) : null}
     </div>
