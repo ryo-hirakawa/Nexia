@@ -16,12 +16,15 @@ export function DashControls({
   storeId,
   recordedDays,
   draftDays,
+  stores,
 }: {
   view: DashView;
   refDate: string;
   storeId: string;
   recordedDays: number;
   draftDays: number;
+  /** 2件以上あるときだけ店舗切り替えを表示する */
+  stores?: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -52,29 +55,51 @@ export function DashControls({
             </button>
           ))}
         </div>
-        {pending ? (
-          <span className="text-xs text-muted">読み込み中…</span>
-        ) : null}
+
+        <div className="flex flex-wrap items-center gap-3">
+          {stores && stores.length > 1 ? (
+            <label className="flex items-center gap-1.5 text-xs text-muted">
+              店舗
+              <select
+                value={storeId}
+                disabled={pending}
+                onChange={(e) => go({ s: e.target.value })}
+                className="rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-foreground"
+              >
+                {stores.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {pending ? <span className="text-xs text-muted">読み込み中…</span> : null}
+        </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => go({ d: shiftRef(view, refDate, -1) })}
-          className="rounded-md border border-line px-2 py-1 hover:bg-surface-2"
-        >
-          ◀
-        </button>
-        <span className="font-semibold">{periodLabel(view, refDate)}</span>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => go({ d: shiftRef(view, refDate, 1) })}
-          className="rounded-md border border-line px-2 py-1 hover:bg-surface-2"
-        >
-          ▶
-        </button>
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => go({ d: shiftRef(view, refDate, -1) })}
+            className="rounded-md border border-line px-2 py-1 hover:bg-surface-2"
+            aria-label="前の期間"
+          >
+            ◀
+          </button>
+          <span className="font-semibold">{periodLabel(view, refDate)}</span>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => go({ d: shiftRef(view, refDate, 1) })}
+            className="rounded-md border border-line px-2 py-1 hover:bg-surface-2"
+            aria-label="次の期間"
+          >
+            ▶
+          </button>
+        </div>
 
         {/* 日付を直接指定してジャンプ */}
         <label className="flex items-center gap-1.5 text-xs text-muted">

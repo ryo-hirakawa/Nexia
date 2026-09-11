@@ -14,6 +14,7 @@ import {
   ResponsiveContainer,
   LabelList,
   Legend,
+  Tooltip,
 } from "recharts";
 
 /** 親要素の実幅を ResizeObserver で測る（recharts の ResponsiveContainer が
@@ -47,6 +48,15 @@ const PIE_COLORS = [
 ];
 
 const yen0 = (n: number) => "¥" + Math.round(n).toLocaleString("ja-JP");
+
+/** recharts の Tooltip の見た目をカードと統一する共通ラッパー */
+function TooltipBox({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-line bg-surface px-3 py-2 text-xs shadow-sm">
+      {children}
+    </div>
+  );
+}
 /** グラフのラベル用：千円単位の "k" ではなく日本語の「万」で表示。
  *  0 は空欄にせず "0" と明示する（定休日などを「未入力」と誤解させないため）。 */
 const manLabel = (n: number) => (n ? Math.round(n / 10000).toLocaleString("ja-JP") + "万" : "0");
@@ -56,7 +66,7 @@ export function AchievementGauge({ rate }: { rate: number | null }) {
   const pctNum = rate === null ? 0 : Math.round(rate * 100);
   const clamped = Math.min(pctNum, 100);
   return (
-    <div className="relative h-28 w-28">
+    <div className="relative h-14 w-14 shrink-0">
       <ResponsiveContainer>
         <RadialBarChart
           innerRadius="72%"
@@ -69,14 +79,14 @@ export function AchievementGauge({ rate }: { rate: number | null }) {
           <RadialBar
             background={{ fill: TRACK }}
             dataKey="v"
-            cornerRadius={20}
+            cornerRadius={10}
             fill={pctNum >= 100 ? ORANGE : NAVY}
             isAnimationActive={false}
           />
         </RadialBarChart>
       </ResponsiveContainer>
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <span className="font-mono text-base font-bold text-orange">
+        <span className="font-mono text-[10px] font-bold text-orange">
           {rate === null ? "—" : pctNum + "%"}
         </span>
       </div>
@@ -84,13 +94,17 @@ export function AchievementGauge({ rate }: { rate: number | null }) {
   );
 }
 
-/** 日次の売上推移（棒） */
+/** 日次の売上推移（棒）。本数が多い（月表示など）ときは棒の上の数字が
+ *  重なるため常時表示をやめ、ホバー/タップで詳細（日付・曜日・金額・
+ *  未入力かどうか）を確認できるようにする。本数が少ない（週表示など）
+ *  ときは従来どおり数字を常時表示する。 */
 export function TrendBars({
   data,
 }: {
   data: { label: string; value: number; dim?: boolean }[];
 }) {
   const [ref, w] = useWidth();
+  const dense = data.length > 12;
   return (
     <div ref={ref} className="h-48 w-full">
       {w > 0 ? (
@@ -107,16 +121,32 @@ export function TrendBars({
             tickLine={false}
             interval="preserveStartEnd"
           />
+          <Tooltip
+            cursor={{ fill: "var(--line)", opacity: 0.5 }}
+            content={({ active, payload }) => {
+              if (!active || !payload?.length) return null;
+              const p = payload[0].payload as { label: string; value: number; dim?: boolean };
+              return (
+                <TooltipBox>
+                  <div className="font-semibold">{p.label}</div>
+                  <div className="mt-0.5 font-mono tabular-nums">{yen0(p.value)}</div>
+                  {p.dim ? <div className="mt-0.5 text-muted">未入力（休業を含む可能性があります）</div> : null}
+                </TooltipBox>
+              );
+            }}
+          />
           <Bar dataKey="value" radius={[3, 3, 0, 0]} maxBarSize={26} minPointSize={2} isAnimationActive={false}>
             {data.map((d, i) => (
               <Cell key={i} fill={d.dim ? TRACK : NAVY} />
             ))}
-            <LabelList
-              dataKey="value"
-              position="top"
-              formatter={(v) => manLabel(Number(v) || 0)}
-              style={{ fontSize: 9, fill: MUTED }}
-            />
+            {!dense ? (
+              <LabelList
+                dataKey="value"
+                position="top"
+                formatter={(v) => manLabel(Number(v) || 0)}
+                style={{ fontSize: 9, fill: MUTED }}
+              />
+            ) : null}
           </Bar>
         </BarChart>
       ) : null}
@@ -136,7 +166,9 @@ export function CompositionDonut({
 }) {
   const total = data.reduce((s, d) => s + d.amount, 0);
   return (
-    <div className="flex items-center gap-4">
+    // 幅が狭い（スマホ縦向きなど）ときは横並びだと凡例の金額が画面外にはみ出す
+    // ため、その場合はドーナツを上・凡例を下に積む。sm 以上で横並びにする。
+    <div className="flex flex-col items-center gap-4 sm:flex-row">
       <div className="relative h-40 w-40 shrink-0">
         <ResponsiveContainer>
           <PieChart>
@@ -161,15 +193,15 @@ export function CompositionDonut({
           <span className="font-mono text-xs font-bold">{yen0(centerValue)}</span>
         </div>
       </div>
-      <ul className="flex-1 space-y-1.5 text-sm">
+      <ul className="w-full min-w-0 flex-1 space-y-1.5 text-sm">
         {data.map((d, i) => (
           <li key={d.name} className="flex items-center gap-2">
             <span
               className="h-2.5 w-2.5 shrink-0 rounded-sm"
               style={{ background: PIE_COLORS[i % PIE_COLORS.length] }}
             />
-            <span className="flex-1 truncate text-muted">{d.name}</span>
-            <span className="font-mono tabular-nums">{yen0(d.amount)}</span>
+            <span className="min-w-0 flex-1 truncate text-muted">{d.name}</span>
+            <span className="shrink-0 font-mono tabular-nums">{yen0(d.amount)}</span>
             <span className="w-10 shrink-0 text-right text-xs text-muted">
               {total > 0 ? Math.round((d.amount / total) * 100) : 0}%
             </span>
@@ -214,6 +246,27 @@ export function CostCompareBars({
             wrapperStyle={{ fontSize: 11, color: "var(--muted)" }}
             formatter={(v) => (v === "current" ? curLabel : prevLabel)}
           />
+          <Tooltip
+            cursor={{ fill: "var(--line)", opacity: 0.5 }}
+            content={({ active, payload, label }) => {
+              if (!active || !payload?.length) return null;
+              return (
+                <TooltipBox>
+                  <div className="font-semibold">{label}</div>
+                  {payload.map((p) => (
+                    <div key={p.dataKey as string} className="mt-0.5 flex items-center gap-1.5">
+                      <span
+                        className="inline-block h-2 w-2 rounded-full"
+                        style={{ background: p.dataKey === "current" ? NAVY : LIGHT }}
+                      />
+                      <span className="text-muted">{p.dataKey === "current" ? curLabel : prevLabel}</span>
+                      <span className="font-mono tabular-nums">{yen0(Number(p.value) || 0)}</span>
+                    </div>
+                  ))}
+                </TooltipBox>
+              );
+            }}
+          />
           <Bar dataKey="current" name="current" fill={NAVY} radius={[3, 3, 0, 0]} maxBarSize={28} minPointSize={2} isAnimationActive={false} />
           <Bar dataKey="previous" name="previous" fill={LIGHT} radius={[3, 3, 0, 0]} maxBarSize={28} minPointSize={2} isAnimationActive={false} />
         </BarChart>
@@ -244,6 +297,22 @@ export function WeekdayBars({
             tick={{ fontSize: 11, fill: MUTED }}
             axisLine={{ stroke: TRACK }}
             tickLine={false}
+          />
+          <Tooltip
+            cursor={{ fill: "var(--line)", opacity: 0.5 }}
+            content={({ active, payload }) => {
+              if (!active || !payload?.length) return null;
+              const p = payload[0].payload as { label: string; avg: number; days: number };
+              return (
+                <TooltipBox>
+                  <div className="font-semibold">{p.label}曜日</div>
+                  <div className="mt-0.5 font-mono tabular-nums">
+                    {p.days > 0 ? yen0(p.avg) : "データなし"}
+                  </div>
+                  <div className="mt-0.5 text-muted">集計 {p.days}日分</div>
+                </TooltipBox>
+              );
+            }}
           />
           <Bar dataKey="avg" radius={[3, 3, 0, 0]} maxBarSize={36} minPointSize={2} isAnimationActive={false}>
             {data.map((d, i) => (
@@ -315,11 +384,13 @@ export function MiniCompareBars({
   );
 }
 
-/** 月別売上：今年 vs 前年同月（直近12ヶ月・グループ棒）。月ビュー専用。 */
+/** 月別売上：今年 vs 前年同月（直近12ヶ月・グループ棒）。月ビュー専用。
+ *  12ヶ月×2本＝24本と数字が重なりやすいため常時ラベルは出さず、
+ *  ホバー/タップで年月・今年/昨年・金額を確認する形にする。 */
 export function MonthlyYoYBars({
   data,
 }: {
-  data: { label: string; cur: number; prev: number }[];
+  data: { label: string; cur: number; prev: number; hasCur?: boolean; hasPrev?: boolean }[];
 }) {
   const [ref, w] = useWidth();
   return (
@@ -343,22 +414,36 @@ export function MonthlyYoYBars({
             wrapperStyle={{ fontSize: 11, color: "var(--muted)" }}
             formatter={(v) => (v === "cur" ? "今年" : "昨年")}
           />
-          <Bar dataKey="cur" name="cur" fill={NAVY} radius={[2, 2, 0, 0]} maxBarSize={18} minPointSize={2} isAnimationActive={false}>
-            <LabelList
-              dataKey="cur"
-              position="top"
-              formatter={(v) => manLabel(Number(v) || 0)}
-              style={{ fontSize: 8, fill: MUTED }}
-            />
-          </Bar>
-          <Bar dataKey="prev" name="prev" fill={LIGHT} radius={[2, 2, 0, 0]} maxBarSize={18} minPointSize={2} isAnimationActive={false}>
-            <LabelList
-              dataKey="prev"
-              position="top"
-              formatter={(v) => manLabel(Number(v) || 0)}
-              style={{ fontSize: 8, fill: MUTED }}
-            />
-          </Bar>
+          <Tooltip
+            cursor={{ fill: "var(--line)", opacity: 0.5 }}
+            content={({ active, payload, label }) => {
+              if (!active || !payload?.length) return null;
+              const p = payload[0].payload as {
+                label: string; cur: number; prev: number; hasCur?: boolean; hasPrev?: boolean;
+              };
+              return (
+                <TooltipBox>
+                  <div className="font-semibold">{label}</div>
+                  <div className="mt-0.5 flex items-center gap-1.5">
+                    <span className="inline-block h-2 w-2 rounded-full" style={{ background: NAVY }} />
+                    <span className="text-muted">今年</span>
+                    <span className="font-mono tabular-nums">
+                      {p.hasCur === false ? "データなし" : yen0(p.cur)}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-1.5">
+                    <span className="inline-block h-2 w-2 rounded-full" style={{ background: LIGHT }} />
+                    <span className="text-muted">昨年</span>
+                    <span className="font-mono tabular-nums">
+                      {p.hasPrev === false ? "比較データなし" : yen0(p.prev)}
+                    </span>
+                  </div>
+                </TooltipBox>
+              );
+            }}
+          />
+          <Bar dataKey="cur" name="cur" fill={NAVY} radius={[2, 2, 0, 0]} maxBarSize={18} minPointSize={2} isAnimationActive={false} />
+          <Bar dataKey="prev" name="prev" fill={LIGHT} radius={[2, 2, 0, 0]} maxBarSize={18} minPointSize={2} isAnimationActive={false} />
         </BarChart>
       ) : null}
     </div>
