@@ -13,6 +13,7 @@ import {
   periodRange,
   datesInRange,
   addDays,
+  shiftYearRef,
   type DashView,
   type WeekdayAvg,
 } from "@/lib/period";
@@ -382,9 +383,21 @@ export type MonthlyYoY = {
   prevSales: number;
   hasCur: boolean;
   hasPrev: boolean;
+  curRange: { start: string; end: string };
+  prevRange: { start: string; end: string };
+  /** 対象期間側がその月の途中まで（まだ終わっていない月）で打ち切られているか */
+  isPartial: boolean;
 };
 
-/** 直近 months ヶ月（既定12）ぶんの月別売上と、その前年同月の売上を並べる */
+/**
+ * 直近 months ヶ月（既定12）ぶんの月別売上と、その前年同期間の売上を並べる。
+ *
+ * 対象月（＝ refDate の月）がまだ終わっていない場合、その月の実績は
+ * refDate までしか存在しない。それを「前年同月・月全体」と比べると
+ * 数字が大きく食い違うため（例: 今月10日ぶんの実績 vs 前年の丸々1ヶ月）、
+ * 対象月が途中のときは前年側も同じ日数（shiftYearRef で閏年を吸収）に
+ * 揃える。それ以外の完了済みの月は、両年とも月全体で比較する。
+ */
 export async function loadMonthlyYoY(
   storeId: string,
   refDate: string,
@@ -392,6 +405,9 @@ export async function loadMonthlyYoY(
 ): Promise<MonthlyYoY[]> {
   const supabase = await createClient();
   const [ey, em] = [Number(refDate.slice(0, 4)), Number(refDate.slice(5, 7))];
+  const dayOfMonth = Number(refDate.slice(8));
+  const dimOfRef = daysInMonth(refDate);
+  const refIsPartial = dayOfMonth < dimOfRef;
 
   const keys: string[] = [];
   for (let i = months - 1; i >= 0; i--) {
@@ -403,11 +419,11 @@ export async function loadMonthlyYoY(
     }
     keys.push(`${yy}-${String(mm).padStart(2, "0")}`);
   }
+  const lastKey = keys[keys.length - 1]; // == refDate の年月
 
   const [fy, fm] = keys[0].split("-").map(Number);
   const rangeStart = `${fy - 1}-${String(fm).padStart(2, "0")}-01`;
-  const [ly, lm] = keys[keys.length - 1].split("-").map(Number);
-  const rangeEnd = `${ly}-${String(lm).padStart(2, "0")}-${String(daysInMonth(keys[keys.length - 1])).padStart(2, "0")}`;
+  const rangeEnd = refIsPartial ? refDate : `${lastKey}-${String(dimOfRef).padStart(2, "0")}`;
 
   const { data } = await supabase
     .from("daily_records")
@@ -415,28 +431,48 @@ export async function loadMonthlyYoY(
     .eq("store_id", storeId)
     .gte("business_date", rangeStart)
     .lte("business_date", rangeEnd);
+  const rows = data ?? [];
 
-  const sums = new Map<string, { sum: number; has: boolean }>();
-  for (const r of data ?? []) {
-    const mk = r.business_date.slice(0, 7);
-    const cur = sums.get(mk) ?? { sum: 0, has: false };
-    cur.sum += Number(r.total_sales);
-    cur.has = true;
-    sums.set(mk, cur);
-  }
+  const sumInRange = (start: string, end: string) => {
+    let sum = 0;
+    let has = false;
+    for (const r of rows) {
+      if (r.business_date >= start && r.business_date <= end) {
+        sum += Number(r.total_sales);
+        has = true;
+      }
+    }
+    return { sum, has };
+  };
 
   return keys.map((k) => {
     const [yy, mm] = k.split("-").map(Number);
+    const isLastPartial = k === lastKey && refIsPartial;
+
+    const curStart = `${k}-01`;
+    const curEnd = isLastPartial ? refDate : `${k}-${String(daysInMonth(k)).padStart(2, "0")}`;
+
     const prevKey = `${yy - 1}-${String(mm).padStart(2, "0")}`;
-    const cur = sums.get(k);
-    const prev = sums.get(prevKey);
+    const prevStart = `${prevKey}-01`;
+    // 対象月が途中のときは、前年側も同じ日数までに揃える（うるう年で同日が
+    // 存在しない場合は shiftYearRef が前年対象月の末日にクリップする）。
+    const prevEnd = isLastPartial
+      ? shiftYearRef(curEnd, -1)
+      : `${prevKey}-${String(daysInMonth(prevKey)).padStart(2, "0")}`;
+
+    const cur = sumInRange(curStart, curEnd);
+    const prev = sumInRange(prevStart, prevEnd);
+
     return {
       monthKey: k,
       label: `${mm}月`,
-      curSales: cur?.sum ?? 0,
-      prevSales: prev?.sum ?? 0,
-      hasCur: cur?.has ?? false,
-      hasPrev: prev?.has ?? false,
+      curSales: cur.sum,
+      prevSales: prev.sum,
+      hasCur: cur.has,
+      hasPrev: prev.has,
+      curRange: { start: curStart, end: curEnd },
+      prevRange: { start: prevStart, end: prevEnd },
+      isPartial: isLastPartial,
     };
   });
 }

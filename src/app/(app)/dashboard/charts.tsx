@@ -8,6 +8,8 @@ import {
   BarChart,
   Bar,
   XAxis,
+  YAxis,
+  CartesianGrid,
   Cell,
   PieChart,
   Pie,
@@ -384,13 +386,21 @@ export function MiniCompareBars({
   );
 }
 
-/** 月別売上：今年 vs 前年同月（直近12ヶ月・グループ棒）。月ビュー専用。
- *  12ヶ月×2本＝24本と数字が重なりやすいため常時ラベルは出さず、
- *  ホバー/タップで年月・今年/昨年・金額を確認する形にする。 */
+/** 月別売上：対象期間 vs 前年同期（直近12ヶ月・グループ棒）。月ビュー専用。
+ *  「今年/昨年」は12ヶ月が年をまたぐと誤解を招くため使わない。
+ *  データがない月は 0円の棒ではなく null にして、棒自体を描かない
+ *  （「データなし」を「0円だった」と混同させないため）。
+ *  左に金額目盛り（万円単位・自動スケール）と薄い横補助線を追加。 */
 export function MonthlyYoYBars({
   data,
 }: {
-  data: { label: string; cur: number; prev: number; hasCur?: boolean; hasPrev?: boolean }[];
+  data: {
+    label: string;
+    cur: number | null;
+    prev: number | null;
+    curRangeLabel: string;
+    prevRangeLabel: string;
+  }[];
 }) {
   const [ref, w] = useWidth();
   return (
@@ -400,42 +410,55 @@ export function MonthlyYoYBars({
           width={w}
           height={256}
           data={data}
-          margin={{ top: 20, right: 8, bottom: 0, left: 8 }}
+          margin={{ top: 20, right: 8, bottom: 0, left: 0 }}
         >
+          <CartesianGrid vertical={false} stroke={TRACK} strokeDasharray="3 3" />
           <XAxis
             dataKey="label"
             tick={{ fontSize: 10, fill: MUTED }}
             axisLine={{ stroke: TRACK }}
             tickLine={false}
           />
+          <YAxis
+            domain={[0, "auto"]}
+            tickFormatter={(v) => manLabel(Number(v) || 0)}
+            tick={{ fontSize: 10, fill: MUTED }}
+            axisLine={false}
+            tickLine={false}
+            width={36}
+          />
           <Legend
             verticalAlign="top"
             height={24}
             wrapperStyle={{ fontSize: 11, color: "var(--muted)" }}
-            formatter={(v) => (v === "cur" ? "今年" : "昨年")}
+            formatter={(v) => (v === "cur" ? "対象期間" : "前年同期")}
           />
           <Tooltip
             cursor={{ fill: "var(--line)", opacity: 0.5 }}
             content={({ active, payload, label }) => {
               if (!active || !payload?.length) return null;
               const p = payload[0].payload as {
-                label: string; cur: number; prev: number; hasCur?: boolean; hasPrev?: boolean;
+                label: string;
+                cur: number | null;
+                prev: number | null;
+                curRangeLabel: string;
+                prevRangeLabel: string;
               };
               return (
                 <TooltipBox>
                   <div className="font-semibold">{label}</div>
                   <div className="mt-0.5 flex items-center gap-1.5">
                     <span className="inline-block h-2 w-2 rounded-full" style={{ background: NAVY }} />
-                    <span className="text-muted">今年</span>
+                    <span className="text-muted">対象期間（{p.curRangeLabel}）</span>
                     <span className="font-mono tabular-nums">
-                      {p.hasCur === false ? "データなし" : yen0(p.cur)}
+                      {p.cur === null ? "データなし" : yen0(p.cur)}
                     </span>
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5">
                     <span className="inline-block h-2 w-2 rounded-full" style={{ background: LIGHT }} />
-                    <span className="text-muted">昨年</span>
+                    <span className="text-muted">前年同期（{p.prevRangeLabel}）</span>
                     <span className="font-mono tabular-nums">
-                      {p.hasPrev === false ? "比較データなし" : yen0(p.prev)}
+                      {p.prev === null ? "比較データなし" : yen0(p.prev)}
                     </span>
                   </div>
                 </TooltipBox>

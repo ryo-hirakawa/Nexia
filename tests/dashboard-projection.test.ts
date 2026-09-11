@@ -45,10 +45,13 @@ describe("projectMonthEndByWeekday", () => {
     expect(r2.forecast).toBeGreaterThanOrEqual(r1.forecast);
   });
 
-  test("実績が0円ならデータ不足として forecast=0・hasEnoughData=false", () => {
+  test("実績が0円でも、月の途中なら計算する（0円そのものは有効な実績で、単独ではデータ不足としない）", () => {
+    // 「確定記録が1件もない」という判定は呼び出し側（ダッシュボード側）の責務。
+    // この純粋関数は「集計対象日が月の途中か」だけで hasEnoughData を決める。
     const wk = weekdayAverages({ 1: 10_000 });
     const r = projectMonthEndByWeekday("2026-08-15", 0, wk);
-    expect(r).toEqual({ forecast: 0, hasEnoughData: false });
+    expect(r.hasEnoughData).toBe(true);
+    expect(r.forecast).toBeGreaterThanOrEqual(0);
   });
 
   test("月が終了している（経過日数=月の日数）場合は対象外として扱う", () => {

@@ -121,6 +121,10 @@ export type MonthEndProjection = {
  *   休業日・繁忙曜日（金・土など）の偏りの影響を受けにくい。
  * - 大型連休など単発のイベントは曜日平均には表れないため、この予測には
  *   反映されない（呼び出し側の UI で明示すること）。
+ *
+ * hasEnoughData は「集計対象日が月の途中か」だけで決める（売上0円そのものは
+ * 有効な実績であり、それだけを理由にデータ不足とはしない）。入力済みの
+ * 確定記録が1件もない、という判定は呼び出し側で別途行うこと。
  */
 export function projectMonthEndByWeekday(
   refDate: string,
@@ -130,7 +134,7 @@ export function projectMonthEndByWeekday(
   const dim = daysInMonth(refDate);
   const monthKey = refDate.slice(0, 7);
   const dayOfMonth = Number(refDate.slice(8));
-  if (dayOfMonth <= 0 || dayOfMonth >= dim || salesSoFar <= 0) {
+  if (dayOfMonth <= 0 || dayOfMonth >= dim) {
     return { forecast: 0, hasEnoughData: false };
   }
   const avgByDow = new Map(weekdayAverages.map((w) => [w.dow, w.avg]));

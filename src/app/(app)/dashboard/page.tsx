@@ -12,6 +12,7 @@ import {
 import { pct, monthLabel, daysInMonth } from "@/lib/finance";
 import {
   addDays,
+  fmtMD,
   fmtMDW,
   periodLabel,
   shiftRef,
@@ -29,55 +30,29 @@ import {
   MonthlyYoYBars,
 } from "./charts";
 import { DashControls } from "./controls";
-
-type Tone = "good" | "bad" | undefined;
-type Delta = { text: string; tone: Tone; short: string };
+import {
+  deltaPct,
+  deltaPt,
+  deltaAmount,
+  directionArrow,
+  toneTextClass,
+  type Tone,
+  type Delta,
+} from "@/lib/delta";
 
 /** 「期」は使わず、ビューに応じて日/週/月で表記する。 */
 const CUR_LABEL: Record<DashView, string> = { day: "当日", week: "当週", month: "当月" };
 const PREV_LABEL: Record<DashView, string> = { day: "前日", week: "前週", month: "前月" };
 const DELTA_LABEL: Record<DashView, string> = { day: "前日比", week: "前週比", month: "前月比" };
 
-/** 色だけに頼らず、良化/悪化を矢印でも示す */
-const toneArrow = (tone: Tone) => (tone === "good" ? "▲ " : tone === "bad" ? "▼ " : "");
-const toneTextClass = (tone: Tone) =>
-  tone === "good" ? "text-good" : tone === "bad" ? "text-bad" : "text-muted";
-
-/** 比較対象との差（％）。上がる方が良い指標向け。invert で下がる方が良い指標に。
- *  label を渡すと「前月比」「前年同月比」など表示ラベルを切り替えられる。
- *  短い差分だけの表記（表の差分列など）用に short も返す。 */
-function deltaPct(cur: number, prev: number, invert = false, label = "前月比"): Delta {
-  if (prev === 0) {
-    if (cur === 0) return { text: `${label} ±0%`, tone: undefined, short: "±0%" };
-    return { text: `${label.replace("比", "")}データなし`, tone: undefined, short: "データなし" };
-  }
-  const r = (cur - prev) / prev;
-  const sign = r > 0 ? "+" : r < 0 ? "" : "±";
-  const tone: Tone = r === 0 ? undefined : (invert ? r < 0 : r > 0) ? "good" : "bad";
-  const short = `${sign}${(r * 100).toFixed(1)}%`;
-  return { text: `${label} ${short}`, tone, short };
-}
-
-/** ポイント差（比率どうしの差）。FL率など。下がる方が良い。 */
-function deltaPt(cur: number | null, prev: number | null, label = "前月比"): Delta {
-  if (cur === null || prev === null) {
-    return { text: `${label.replace("比", "")}データなし`, tone: undefined, short: "データなし" };
-  }
-  const diff = (cur - prev) * 100;
-  const sign = diff > 0 ? "+" : diff < 0 ? "" : "±";
-  const tone: Tone = diff === 0 ? undefined : diff < 0 ? "good" : "bad";
-  const short = `${sign}${diff.toFixed(1)}pt`;
-  return { text: `${label} ${short}`, tone, short };
-}
-
 /**
  * 事実だけからルールベースで作る短い要約（最大3件）。
  * 原因の推測はせず、集計値からそのまま言える内容のみ。
- * 優先順位: 未入力（集計未完了）＞ 客数/客単価の逆行 ＞ 売上の増減 ＞ 利益/FL率の悪化。
+ * 優先順位: 客数/客単価の逆行 ＞ 売上の増減 ＞ 利益/FL率の悪化。
+ * 未入力の警告はヘッダーに一本化しているため、ここでは繰り返さない。
  */
 function buildInsights(args: {
   view: DashView;
-  missingDays: number;
   hasPrev: boolean;
   d: DashboardData;
   salesDelta: Delta;
@@ -86,18 +61,9 @@ function buildInsights(args: {
   avgSpendDelta: Delta;
   flDelta: Delta;
 }): { text: string; tone: Tone; icon: string }[] {
-  const { view, missingDays, hasPrev, d, salesDelta, profitDelta, guestDelta, avgSpendDelta, flDelta } = args;
+  const { view, hasPrev, d, salesDelta, profitDelta, guestDelta, avgSpendDelta, flDelta } = args;
   const out: { text: string; tone: Tone; icon: string }[] = [];
   const deltaLabel = DELTA_LABEL[view];
-
-  // データの状態に関する注意（方向性のある増減ではないので矢印ではなく注意記号）
-  if (missingDays > 0) {
-    out.push({
-      text: `${CUR_LABEL[view]}に未入力の日が${missingDays}日あります。集計はまだ完了していません。`,
-      tone: "bad",
-      icon: "⚠",
-    });
-  }
 
   if (!hasPrev) {
     out.push({ text: `${PREV_LABEL[view]}の記録がないため比較できません。`, tone: undefined, icon: "・" });
@@ -114,7 +80,7 @@ function buildInsights(args: {
       out.push({
         text: `売上は${deltaLabel}で${salesDelta.tone === "good" ? "増加" : "減少"}しています（${salesDelta.short}）。`,
         tone: salesDelta.tone,
-        icon: toneArrow(salesDelta.tone),
+        icon: directionArrow(salesDelta.direction),
       });
     }
 
@@ -125,10 +91,12 @@ function buildInsights(args: {
         icon: "⚠",
       });
     } else if (profitDelta.tone === "bad") {
+      // deltaAmount がすでに「赤字転落／赤字拡大／通常の悪化」を正しく
+      // 文言化しているので、そのまま使う（重複した独自文言を作らない）。
       out.push({
-        text: `営業利益が${deltaLabel}で悪化しています（${profitDelta.short}）。`,
+        text: `営業利益: ${profitDelta.text}`,
         tone: "bad",
-        icon: toneArrow("bad"),
+        icon: directionArrow(profitDelta.direction),
       });
     }
 
@@ -136,7 +104,7 @@ function buildInsights(args: {
       out.push({
         text: `FLコスト率（原価＋人件費の比率）が${deltaLabel}で悪化しています（${flDelta.short}）。`,
         tone: "bad",
-        icon: toneArrow("bad"),
+        icon: directionArrow(flDelta.direction),
       });
     }
   }
@@ -195,19 +163,21 @@ export default async function DashboardPage({
 
   const deltaLabel = DELTA_LABEL[view];
   const salesDelta = deltaPct(d.sales, previous.sales, false, deltaLabel);
-  const profitDelta = deltaPct(d.operatingProfit, previous.operatingProfit, false, deltaLabel);
+  // 営業利益は赤字（マイナス）になり得るため、通常の％比較(deltaPct)ではなく
+  // 符号の変化を扱える deltaAmount を使う（黒字転換/赤字転落などを正しく判定する）。
+  const profitDelta = deltaAmount(d.operatingProfit, previous.operatingProfit, deltaLabel);
   const flDelta = deltaPt(d.flRate, previous.flRate, deltaLabel);
   const guestDelta = deltaPct(d.guests, previous.guests, false, deltaLabel);
   const avgSpendDelta: Delta =
     d.avgSpend !== null && previous.avgSpend !== null
       ? deltaPct(d.avgSpend, previous.avgSpend, false, deltaLabel)
-      : { text: `${PREV_LABEL[view]}データなし`, tone: undefined, short: "データなし" };
+      : { text: `${PREV_LABEL[view]}データなし`, tone: undefined, short: "データなし", direction: "flat" };
 
-  const yearOverYear =
+  const yearOverYear: Delta | null =
     view === "month"
       ? yearAgo && yearAgo.recordedDays > 0
         ? deltaPct(d.sales, yearAgo.sales, false, "前年同月比")
-        : { text: "前年データ蓄積中（13ヶ月で自動表示）", tone: undefined as Tone }
+        : { text: "前年データ蓄積中（13ヶ月で自動表示）", tone: undefined, short: "", direction: "flat" }
       : null;
 
   // 月末着地予測。曜日別平均（直近90日、weekday）で残り日数を積み上げる方式。
@@ -220,20 +190,32 @@ export default async function DashboardPage({
     view === "month" && !d.isMonthComplete
       ? projectMonthEndByWeekday(refDate, d.sales, weekday)
       : null;
+  // 「予測に使える確定済みの記録がない」を売上0円そのものと区別する。
+  // 0円は有効な実績（休業/未入力とは別状態）なので、それだけを理由に
+  // データ不足とはしない。下書き（未確定）だけの状態も不足として扱う。
+  const confirmedDaysSoFar = d.recordedDays - d.draftDays;
   const forecastState: "complete" | "insufficient" | "ready" =
     view !== "month"
       ? "insufficient"
       : d.isMonthComplete
         ? "complete"
-        : !projection?.hasEnoughData
+        : !projection?.hasEnoughData || confirmedDaysSoFar <= 0
           ? "insufficient"
           : "ready";
   const forecastGap =
-    projection?.hasEnoughData && d.salesTarget > 0 ? projection.forecast - d.salesTarget : null;
+    forecastState === "ready" && d.salesTarget > 0 ? projection!.forecast - d.salesTarget : null;
+  // 今日（実際のシステム日付）と同じ月を見ているときだけ「進行中の月」と呼ぶ。
+  // 過去に終わった月の途中の日付を試しに選んでいる場合は「○月○日時点の予測」とする。
+  const isRealCurrentMonth = refDate.slice(0, 7) === jstDateString(0).slice(0, 7);
+  const forecastTitle = isRealCurrentMonth
+    ? "月末着地予想（進行中の月）"
+    : `月末着地予想（${Number(refDate.slice(5, 7))}月${dayOfMonth}日時点）`;
+  // 月が終了しているだけで「確定した実績」とは呼ばない。未入力・下書きが
+  // 残っていれば「暫定実績」とする。
+  const isProvisionalActual = missingDays > 0 || d.draftDays > 0;
 
   const insights = buildInsights({
     view,
-    missingDays,
     hasPrev,
     d,
     salesDelta,
@@ -303,7 +285,7 @@ export default async function DashboardPage({
               v={yen(d.sales)}
               sub={
                 d.salesTarget > 0
-                  ? `目標 ${yen(d.salesTarget)}`
+                  ? `${view === "month" ? "目標" : "月間目標"} ${yen(d.salesTarget)}`
                   : "目標未設定"
               }
               delta={salesDelta}
@@ -320,51 +302,22 @@ export default async function DashboardPage({
                     }
                   : undefined
               }
-              aside={d.salesTarget > 0 ? <AchievementGauge rate={d.targetRate} /> : undefined}
-              footnote={
-                view !== "month" ? undefined : forecastState === "complete" ? (
-                  <p className="text-xs text-muted">
-                    この月は終了しているため、月末着地予測ではなく確定した実績を表示しています。
-                  </p>
-                ) : forecastState === "insufficient" ? (
-                  <p className="text-xs text-warn">月末着地予測: 予測に必要なデータ不足</p>
-                ) : (
-                  <div className="rounded-lg bg-surface-2 p-2.5">
-                    <p className="text-xs font-semibold text-muted">月末売上予想（進行中の月）</p>
-                    <div className="mt-1.5 space-y-1 text-xs">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-muted">月末売上予想</span>
-                        <span className="overflow-x-auto whitespace-nowrap font-mono font-bold tabular-nums">
-                          {yen(projection!.forecast)}
-                        </span>
-                      </div>
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-muted">目標との差額</span>
-                        <span
-                          className={
-                            "overflow-x-auto whitespace-nowrap font-mono font-bold tabular-nums " +
-                            (forecastGap === null ? "" : toneTextClass(forecastGap >= 0 ? "good" : "bad"))
-                          }
-                        >
-                          {forecastGap === null ? "目標未設定" : (forecastGap >= 0 ? "+" : "") + yen(forecastGap)}
-                        </span>
-                      </div>
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-muted">予想達成率</span>
-                        <span className="overflow-x-auto whitespace-nowrap font-mono font-bold tabular-nums">
-                          {d.salesTarget > 0 ? pct(projection!.forecast / d.salesTarget) : "—"}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="mt-2 text-xs text-muted">
-                      基準日: {fmtMDW(refDate)}時点の実績 {yen(d.sales)}（{dayOfMonth}日経過）＋残り{daysInMonth(refDate) - dayOfMonth}
-                      日ぶんの曜日別平均（直近90日）を積み上げ。未入力日は0円として計算するため、未入力があると予想は低めに出ます。
-                    </p>
-                    <p className="mt-1 text-xs text-muted">
-                      定休日・曜日ごとの傾向は織り込みますが、大型連休など単発の特別なイベントの影響は反映されません。
-                    </p>
+              // 達成率リングは月表示専用。日・週の売上を月間目標で割ると
+              // 意味のない低い数字になるため、日・週表示では出さない。
+              aside={
+                view === "month" && d.salesTarget > 0 ? (
+                  <div className="flex flex-col items-center gap-0.5">
+                    <AchievementGauge rate={d.targetRate} />
+                    <span className="text-[9px] text-muted">実績</span>
                   </div>
-                )
+                ) : undefined
+              }
+              footnote={
+                view === "month" && d.isMonthComplete ? (
+                  <p className="text-xs text-muted">
+                    月終了（{isProvisionalActual ? "暫定実績" : "確定実績"}）
+                  </p>
+                ) : undefined
               }
             />
             <Kpi
@@ -423,6 +376,53 @@ export default async function DashboardPage({
               sub={`${fmtMDW(d.range.end)} 時点（期間の売上ではありません）`}
             />
           </div>
+
+          {/* 月末着地予想：月表示・進行中（未終了）のときだけ、主要カード直下に
+              横長で配置する。終了済みの月は予想ではなく実績が答えなので出さない。 */}
+          {view === "month" && !d.isMonthComplete ? (
+            <div className="rounded-xl border border-line bg-surface p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold">{forecastTitle}</p>
+                {forecastState === "ready" && missingDays > 0 ? (
+                  <span className="rounded-full bg-warn/10 px-2.5 py-1 text-xs font-medium text-warn">
+                    暫定予測・未入力{missingDays}日あり
+                  </span>
+                ) : null}
+              </div>
+
+              {forecastState === "insufficient" ? (
+                <p className="mt-2 text-sm text-warn">
+                  予測に必要なデータ不足（確定済みの記録がありません）
+                </p>
+              ) : (
+                <>
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <ForecastStat label="月末売上予想" value={yen(projection!.forecast)} />
+                    <ForecastStat
+                      label="目標との差額"
+                      value={forecastGap === null ? "目標未設定" : (forecastGap >= 0 ? "+" : "") + yen(forecastGap)}
+                      tone={forecastGap === null ? undefined : forecastGap >= 0 ? "good" : "bad"}
+                    />
+                    <ForecastStat
+                      label="予想達成率"
+                      value={d.salesTarget > 0 ? pct(projection!.forecast / d.salesTarget) : "目標未設定"}
+                    />
+                  </div>
+                  <p className="mt-3 text-xs text-muted">
+                    基準日: {fmtMDW(refDate)}時点の実績 {yen(d.sales)}（{dayOfMonth}日経過）
+                  </p>
+                  <details className="mt-1 text-xs text-muted">
+                    <summary className="cursor-pointer select-none">算式・前提を見る</summary>
+                    <p className="mt-1 leading-relaxed">
+                      残り{daysInMonth(refDate) - dayOfMonth}日ぶんを、曜日別平均（直近90日）で1日ずつ積み上げて計算しています。
+                      未入力日は0円として計算するため、未入力があると予想は低めに出ます。
+                      定休日・曜日ごとの傾向は織り込みますが、大型連休など単発の特別なイベントの影響は反映されません。
+                    </p>
+                  </details>
+                </>
+              )}
+            </div>
+          ) : null}
 
           {/* ③ 状況の要約：事実ベースで最大3件 */}
           {insights.length > 0 ? (
@@ -488,27 +488,35 @@ export default async function DashboardPage({
           ) : null}
 
           {monthlyYoY ? (
-            <Card title="月別売上（今年 vs 昨年・直近12ヶ月）">
+            <Card title="月別売上（対象期間 vs 前年同期・直近12ヶ月）">
               {monthlyYoY.some((m) => m.hasCur || m.hasPrev) ? (
                 <>
                   <MonthlyYoYBars
                     data={monthlyYoY.map((m) => ({
                       label: m.label,
-                      cur: m.curSales,
-                      prev: m.prevSales,
-                      hasCur: m.hasCur,
-                      hasPrev: m.hasPrev,
+                      cur: m.hasCur ? m.curSales : null,
+                      prev: m.hasPrev ? m.prevSales : null,
+                      curRangeLabel: `${m.curRange.start.slice(0, 4)}/${fmtMD(m.curRange.start)}〜${fmtMD(m.curRange.end)}`,
+                      prevRangeLabel: `${m.prevRange.start.slice(0, 4)}/${fmtMD(m.prevRange.start)}〜${fmtMD(m.prevRange.end)}`,
                     }))}
                   />
                   <p className="mt-2 text-xs text-muted">
-                    今年 = {monthLabel(monthlyYoY[0].monthKey)} 〜{" "}
+                    対象期間 = {monthLabel(monthlyYoY[0].monthKey)} 〜{" "}
                     {monthLabel(monthlyYoY[monthlyYoY.length - 1].monthKey)}
                     {" ・ "}
-                    昨年 = 同期間の1年前（各月とも同じ月同士で比較）
+                    前年同期 = 対象期間の1年前（同じ月・同じ日数で比較）
                   </p>
+                  {monthlyYoY[monthlyYoY.length - 1].isPartial ? (
+                    <p className="mt-1 text-xs text-muted">
+                      {monthlyYoY[monthlyYoY.length - 1].label}は
+                      {fmtMD(monthlyYoY[monthlyYoY.length - 1].curRange.end)}
+                      までの実績（月の途中）です。前年同期も同じ日数までで比較しています。
+                    </p>
+                  ) : null}
                   <p className="mt-1 text-right text-xs text-muted">
-                    今年計 {yen(monthlyYoY.reduce((s, m) => s + m.curSales, 0))}（昨年計{" "}
+                    対象期間計 {yen(monthlyYoY.reduce((s, m) => s + m.curSales, 0))}（前年同期計{" "}
                     {yen(monthlyYoY.reduce((s, m) => s + m.prevSales, 0))}）
+                    {monthlyYoY[monthlyYoY.length - 1].isPartial ? "※末月は途中までの合計" : ""}
                   </p>
                   {monthlyYoY.some((m) => !m.hasPrev) ? (
                     <p className="mt-1 text-xs text-muted">
@@ -699,7 +707,7 @@ function CompareRow({
   label: string;
   cur: string;
   prev: string;
-  delta: { short: string; tone: Tone };
+  delta: Delta;
 }) {
   return (
     <tr className="border-b border-line last:border-0">
@@ -707,6 +715,7 @@ function CompareRow({
       <td className="py-1.5 text-right font-mono tabular-nums">{cur}</td>
       <td className="py-1.5 text-right font-mono tabular-nums text-muted">{prev}</td>
       <td className={"py-1.5 text-right font-mono text-xs tabular-nums " + toneTextClass(delta.tone)}>
+        {directionArrow(delta.direction)}
         {delta.short}
       </td>
     </tr>
@@ -720,7 +729,7 @@ function MiniStat({
 }: {
   label: string;
   value: string;
-  delta?: { text: string; tone: Tone };
+  delta?: Delta;
 }) {
   return (
     <div>
@@ -730,10 +739,36 @@ function MiniStat({
       </div>
       {delta ? (
         <div className={"mt-0.5 text-xs font-medium " + toneTextClass(delta.tone)}>
-          {toneArrow(delta.tone)}
+          {directionArrow(delta.direction)}
           {delta.text.replace(/^\S+比\s*/, "")}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** 月末着地予想エリアの3項目（月末売上予想／目標との差額／予想達成率）。
+ *  横並び(sm以上)・縦並び(スマホ)いずれでも金額が切れないよう安全弁を付ける。 */
+function ForecastStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "good" | "bad";
+}) {
+  return (
+    <div>
+      <div className="text-xs text-muted">{label}</div>
+      <div
+        className={
+          "mt-0.5 overflow-x-auto whitespace-nowrap font-mono text-lg font-bold tabular-nums " +
+          (tone === "good" ? "text-good" : tone === "bad" ? "text-bad" : "")
+        }
+      >
+        {value}
+      </div>
     </div>
   );
 }
@@ -753,8 +788,8 @@ function Kpi({
   v: string;
   sub?: string;
   tone?: "good" | "bad";
-  delta?: { text: string; tone: Tone };
-  extraDelta?: { text: string; tone: Tone };
+  delta?: Delta;
+  extraDelta?: Delta;
   compare?: {
     current: number;
     previous: number;
@@ -782,13 +817,13 @@ function Kpi({
           {sub ? <div className="mt-1 text-xs break-words text-muted">{sub}</div> : null}
           {delta ? (
             <div className={"mt-1 text-xs font-medium " + toneTextClass(delta.tone)}>
-              {toneArrow(delta.tone)}
+              {directionArrow(delta.direction)}
               {delta.text}
             </div>
           ) : null}
           {extraDelta ? (
             <div className={"mt-0.5 text-xs font-medium " + toneTextClass(extraDelta.tone)}>
-              {toneArrow(extraDelta.tone)}
+              {directionArrow(extraDelta.direction)}
               {extraDelta.text}
             </div>
           ) : null}
