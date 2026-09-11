@@ -12,6 +12,7 @@ import {
   CompositionDonut,
   CostCompareBars,
   WeekdayBars,
+  MiniCompareBars,
 } from "./charts";
 import { DashControls } from "./controls";
 
@@ -161,6 +162,11 @@ export default async function DashboardPage({
                   {salesDelta.text}
                   {yearOverYear ? ` ・ 前年同月比 ${yearOverYear.text}` : ""}
                 </div>
+                {hasPrev ? (
+                  <div className="[&_*]:!text-white">
+                    <MiniCompareBars current={d.sales} previous={previous.sales} format={yen} />
+                  </div>
+                ) : null}
               </div>
               {d.salesTarget > 0 ? <AchievementGauge rate={d.targetRate} /> : null}
             </div>
@@ -171,18 +177,25 @@ export default async function DashboardPage({
               sub={`利益率 ${pct(d.operatingMarginRate)}`}
               tone={d.operatingProfit < 0 ? "bad" : "good"}
               delta={profitDelta}
+              compare={hasPrev ? { current: d.operatingProfit, previous: previous.operatingProfit, format: yen } : undefined}
             />
             <Kpi
               k="FL コスト率"
               v={pct(d.flRate)}
               sub={`原価 ${pct(d.cogsRate)} ・ 人件費 ${pct(d.laborRate)}`}
               delta={flDelta}
+              compare={
+                hasPrev && d.flRate !== null && previous.flRate !== null
+                  ? { current: d.flRate * 100, previous: previous.flRate * 100, format: (n) => n.toFixed(1) + "%" }
+                  : undefined
+              }
             />
             <Kpi
               k="客数 / 客単価"
               v={`${d.guests} / ${d.avgSpend === null ? "—" : yen(d.avgSpend)}`}
               sub={`組数 ${d.groups}`}
               delta={guestDelta}
+              compare={hasPrev ? { current: d.guests, previous: previous.guests, format: (n) => `${Math.round(n)}人` } : undefined}
             />
             <Kpi k="売掛残高" v={yen(d.receivableBalance)} sub="期間末時点" />
             {d.view === "month" && d.landingForecast !== null ? (
@@ -392,6 +405,7 @@ function Kpi({
   tone,
   accent,
   delta,
+  compare,
 }: {
   k: string;
   v: string;
@@ -399,6 +413,7 @@ function Kpi({
   tone?: "good" | "bad";
   accent?: boolean;
   delta?: { text: string; tone: Tone };
+  compare?: { current: number; previous: number; format: (n: number) => string };
 }) {
   return (
     <div
@@ -430,6 +445,9 @@ function Kpi({
         >
           {delta.text}
         </div>
+      ) : null}
+      {compare ? (
+        <MiniCompareBars current={compare.current} previous={compare.previous} format={compare.format} />
       ) : null}
     </div>
   );

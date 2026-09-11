@@ -47,6 +47,8 @@ const PIE_COLORS = [
 ];
 
 const yen0 = (n: number) => "¥" + Math.round(n).toLocaleString("ja-JP");
+/** グラフのラベル用：千円単位の "k" ではなく日本語の「万」で表示 */
+const manLabel = (n: number) => (n ? Math.round(n / 10000).toLocaleString("ja-JP") + "万" : "");
 
 /** 目標達成率のゲージ（0〜120%+） */
 export function AchievementGauge({ rate }: { rate: number | null }) {
@@ -111,10 +113,7 @@ export function TrendBars({
             <LabelList
               dataKey="value"
               position="top"
-              formatter={(v) => {
-                const n = Number(v) || 0;
-                return n ? Math.round(n / 1000) + "k" : "";
-              }}
+              formatter={(v) => manLabel(Number(v) || 0)}
               style={{ fontSize: 9, fill: MUTED }}
             />
           </Bar>
@@ -250,13 +249,54 @@ export function WeekdayBars({
               position="top"
               formatter={(v) => {
                 const n = Number(v) || 0;
-                return n ? Math.round(n / 1000) + "k" : "—";
+                return n ? manLabel(n) : "—";
               }}
               style={{ fontSize: 9, fill: MUTED }}
             />
           </Bar>
         </BarChart>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * KPI カード用の当期/前期ミニ比較バー（recharts 不使用の軽量 HTML/CSS）。
+ * 数値は省略せずそのままのラベルで表示する。
+ */
+export function MiniCompareBars({
+  current,
+  previous,
+  format,
+}: {
+  current: number;
+  previous: number;
+  format: (n: number) => string;
+}) {
+  const max = Math.max(Math.abs(current), Math.abs(previous), 1);
+  const row = (label: string, value: number, color: string, muted?: boolean) => (
+    <div className="flex items-center gap-2">
+      <span
+        className="w-8 shrink-0 text-[10px]"
+        style={{ color: muted ? MUTED : "inherit", opacity: muted ? 1 : 0.75 }}
+      >
+        {label}
+      </span>
+      <span className="relative h-2 flex-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+        <span
+          className="absolute inset-y-0 left-0 rounded-full transition-[width]"
+          style={{ width: `${Math.min(100, (Math.abs(value) / max) * 100)}%`, background: color }}
+        />
+      </span>
+      <span className="w-[4.75rem] shrink-0 text-right font-mono text-[10px] tabular-nums" style={{ opacity: 0.85 }}>
+        {format(value)}
+      </span>
+    </div>
+  );
+  return (
+    <div className="mt-2 space-y-1">
+      {row("当期", current, ORANGE)}
+      {row("前期", previous, LIGHT, true)}
     </div>
   );
 }
