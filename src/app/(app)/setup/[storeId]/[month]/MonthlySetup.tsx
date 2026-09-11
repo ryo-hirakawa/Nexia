@@ -204,6 +204,7 @@ export default function MonthlySetup({
  <h2 className="mb-1 text-sm font-semibold">固定費</h2>
  <p className="mb-3 text-xs text-muted">
  家賃・リース・保険・通信・借入返済・減価償却 など。月給スタッフは含めない。
+ 分類を「借入返済」にすると、元金相当としてダッシュボードの営業利益からは自動的に除外されます（内訳未設定として参考表示）。「減価償却」は費用として計上しますが、現金の支出ではない旨がダッシュボードに表示されます。
  </p>
  <datalist id="fixed-cats">
  {FIXED_CATEGORIES.map((c) => (
