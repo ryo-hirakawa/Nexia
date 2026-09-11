@@ -9,47 +9,56 @@ async function loadByMonthKey(
 ): Promise<MonthlySetupForm> {
   const supabase = await createClient();
 
-  // 互いに依存しないので並列で取得する
-  const [{ data: tgt }, { data: ms }] = await Promise.all([
-    supabase
-      .from("monthly_targets")
-      .select("sales_target")
-      .eq("store_id", storeId)
-      .eq("year_month", yearMonth)
-      .maybeSingle(),
-    supabase
-      .from("monthly_setups")
-      .select("id, updated_at")
-      .eq("store_id", storeId)
-      .eq("year_month", yearMonth)
-      .maybeSingle(),
-  ]);
+  // Supabase(東京)とVercelの実行環境(米国)の往復は1回あたり数百msかかる。
+  // 「monthly_setups.id を取ってから fixed/staff を取る」という2段階の
+  // 直列往復を避け、fixed_cost_lines/monthly_staff は
+  // monthly_setups!inner(store_id, year_month) の埋め込みJOINで
+  // store_id×年月から直接引く。4クエリとも互いに依存しないので
+  // 1回の往復(Promise.all)にまとめる。
+  const [{ data: tgt }, { data: ms }, { data: fixed }, { data: staff }] =
+    await Promise.all([
+      supabase
+        .from("monthly_targets")
+        .select("sales_target")
+        .eq("store_id", storeId)
+        .eq("year_month", yearMonth)
+        .maybeSingle(),
+      supabase
+        .from("monthly_setups")
+        .select("id, updated_at")
+        .eq("store_id", storeId)
+        .eq("year_month", yearMonth)
+        .maybeSingle(),
+      supabase
+        .from("fixed_cost_lines")
+        .select(
+          "item, category, amount_monthly, sort_order, monthly_setups!inner(store_id, year_month)",
+        )
+        .eq("monthly_setups.store_id", storeId)
+        .eq("monthly_setups.year_month", yearMonth)
+        .order("sort_order"),
+      supabase
+        .from("monthly_staff")
+        .select(
+          "staff_name, amount_monthly, sort_order, monthly_setups!inner(store_id, year_month)",
+        )
+        .eq("monthly_setups.store_id", storeId)
+        .eq("monthly_setups.year_month", yearMonth)
+        .order("sort_order"),
+    ]);
   const salesTarget = Number(tgt?.sales_target ?? 0);
 
-  const empty: MonthlySetupForm = {
-    id: null,
-    storeId,
-    yearMonth,
-    fixed: [],
-    staff: [],
-    salesTarget,
-    updatedAt: null,
-  };
-
-  if (!ms) return empty;
-
-  const [{ data: fixed }, { data: staff }] = await Promise.all([
-    supabase
-      .from("fixed_cost_lines")
-      .select("item, category, amount_monthly, sort_order")
-      .eq("monthly_setup_id", ms.id)
-      .order("sort_order"),
-    supabase
-      .from("monthly_staff")
-      .select("staff_name, amount_monthly, sort_order")
-      .eq("monthly_setup_id", ms.id)
-      .order("sort_order"),
-  ]);
+  if (!ms) {
+    return {
+      id: null,
+      storeId,
+      yearMonth,
+      fixed: [],
+      staff: [],
+      salesTarget,
+      updatedAt: null,
+    };
+  }
 
   return {
     id: ms.id,

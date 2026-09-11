@@ -97,78 +97,68 @@ export async function loadDashboardData(
   const monthKey = monthKeyOf(refDate);
   const dim = daysInMonth(refDate);
 
-  // 互いに依存しないクエリは並列で投げ、往復のシーケンス数を減らす
-  const [setup, recsResult, tgtResult, recvResult] = await Promise.all([
-    loadSetupDataForDate(storeId, refDate),
-    supabase
-      .from("daily_records")
-      .select("id, business_date, status, total_sales, guest_count, group_count")
-      .eq("store_id", storeId)
-      .gte("business_date", range.start)
-      .lte("business_date", range.end)
-      .order("business_date"),
-    supabase
-      .from("monthly_targets")
-      .select("sales_target")
-      .eq("store_id", storeId)
-      .eq("year_month", monthKey)
-      .maybeSingle(),
-    detail
-      ? supabase
-          .from("daily_receivable_entries")
-          .select("direction, amount, daily_records!inner(store_id, business_date)")
-          .eq("daily_records.store_id", storeId)
-          .lte("daily_records.business_date", range.end)
-      : Promise.resolve({ data: [] as { direction: string; amount: number }[] }),
-  ]);
-
-  // 集計範囲に含まれる暦日数（記録の有無・休業日は問わない）。
-  // 固定費・月給は「記録がある日数」ではなくこの暦日数で按分する。
-  const calendarDays = datesInRange(range.start, range.end).length;
-  const isMonthComplete = view === "month" && calendarDays >= dim;
-
-  const records = recsResult.data ?? [];
-  const recordedDays = records.length;
-  const draftDays = records.filter((r) => r.status === "draft").length;
-  const ids = records.map((r) => r.id);
-
-  let categories: { category: string; amount: number }[] = [];
-  let payments: { method: string; amount: number }[] = [];
-  let costs: { cost_class: string; item: string; amount: number }[] = [];
-  let casts: {
-    cast_name: string;
-    nominate_amount: number;
-    table_amount: number;
-    companion_amount: number;
-    back_amount: number;
-  }[] = [];
-
-  if (ids.length) {
-    const [c1, c2, c3, c4] = await Promise.all([
+  // 互いに依存しないクエリは1回の往復(Promise.all)にまとめる。
+  // Supabase(東京)とVercelの実行環境(米国)の往復は1回あたり数百msかかるため、
+  // 「records を取ってから daily_record_id で子テーブルを引く」という
+  // 2段階の直列往復を避け、costs/categories/payments/casts も
+  // daily_records!inner(store_id, business_date) の埋め込みJOINで
+  // store_id×期間から直接引く（daily_receivable_entries で既に使っていた
+  // パターンと同じ）。
+  const [setup, recsResult, tgtResult, recvResult, costsResult, catResult, payResult, castResult] =
+    await Promise.all([
+      loadSetupDataForDate(storeId, refDate),
+      supabase
+        .from("daily_records")
+        .select("id, business_date, status, total_sales, guest_count, group_count")
+        .eq("store_id", storeId)
+        .gte("business_date", range.start)
+        .lte("business_date", range.end)
+        .order("business_date"),
+      supabase
+        .from("monthly_targets")
+        .select("sales_target")
+        .eq("store_id", storeId)
+        .eq("year_month", monthKey)
+        .maybeSingle(),
+      detail
+        ? supabase
+            .from("daily_receivable_entries")
+            .select("direction, amount, daily_records!inner(store_id, business_date)")
+            .eq("daily_records.store_id", storeId)
+            .lte("daily_records.business_date", range.end)
+        : Promise.resolve({ data: [] as { direction: string; amount: number }[] }),
       // 費目別経費（当該/比較の両方で使う）は常に取得
       supabase
         .from("daily_costs")
-        .select("cost_class, item, amount")
-        .in("daily_record_id", ids),
+        .select("cost_class, item, amount, daily_records!inner(store_id, business_date)")
+        .eq("daily_records.store_id", storeId)
+        .gte("daily_records.business_date", range.start)
+        .lte("daily_records.business_date", range.end),
       detail
         ? supabase
             .from("daily_sales_categories")
-            .select("category, amount")
-            .in("daily_record_id", ids)
+            .select("category, amount, daily_records!inner(store_id, business_date)")
+            .eq("daily_records.store_id", storeId)
+            .gte("daily_records.business_date", range.start)
+            .lte("daily_records.business_date", range.end)
         : Promise.resolve({ data: [] as { category: string; amount: number }[] }),
       detail
         ? supabase
             .from("daily_payments")
-            .select("method, amount")
-            .in("daily_record_id", ids)
+            .select("method, amount, daily_records!inner(store_id, business_date)")
+            .eq("daily_records.store_id", storeId)
+            .gte("daily_records.business_date", range.start)
+            .lte("daily_records.business_date", range.end)
         : Promise.resolve({ data: [] as { method: string; amount: number }[] }),
       detail
         ? supabase
             .from("daily_cast_sales")
             .select(
-              "cast_name, nominate_amount, table_amount, companion_amount, back_amount",
+              "cast_name, nominate_amount, table_amount, companion_amount, back_amount, daily_records!inner(store_id, business_date)",
             )
-            .in("daily_record_id", ids)
+            .eq("daily_records.store_id", storeId)
+            .gte("daily_records.business_date", range.start)
+            .lte("daily_records.business_date", range.end)
         : Promise.resolve({
             data: [] as {
               cast_name: string;
@@ -179,27 +169,36 @@ export async function loadDashboardData(
             }[],
           }),
     ]);
-    costs = (c1.data ?? []).map((r) => ({
-      cost_class: r.cost_class,
-      item: r.item,
-      amount: Number(r.amount),
-    }));
-    categories = (c2.data ?? []).map((r) => ({
-      category: r.category,
-      amount: Number(r.amount),
-    }));
-    payments = (c3.data ?? []).map((r) => ({
-      method: r.method,
-      amount: Number(r.amount),
-    }));
-    casts = (c4.data ?? []).map((r) => ({
-      cast_name: r.cast_name,
-      nominate_amount: Number(r.nominate_amount),
-      table_amount: Number(r.table_amount),
-      companion_amount: Number(r.companion_amount),
-      back_amount: Number(r.back_amount),
-    }));
-  }
+
+  // 集計範囲に含まれる暦日数（記録の有無・休業日は問わない）。
+  // 固定費・月給は「記録がある日数」ではなくこの暦日数で按分する。
+  const calendarDays = datesInRange(range.start, range.end).length;
+  const isMonthComplete = view === "month" && calendarDays >= dim;
+
+  const records = recsResult.data ?? [];
+  const recordedDays = records.length;
+  const draftDays = records.filter((r) => r.status === "draft").length;
+
+  const costs = (costsResult.data ?? []).map((r) => ({
+    cost_class: r.cost_class,
+    item: r.item,
+    amount: Number(r.amount),
+  }));
+  const categories = (catResult.data ?? []).map((r) => ({
+    category: r.category,
+    amount: Number(r.amount),
+  }));
+  const payments = (payResult.data ?? []).map((r) => ({
+    method: r.method,
+    amount: Number(r.amount),
+  }));
+  const casts = (castResult.data ?? []).map((r) => ({
+    cast_name: r.cast_name,
+    nominate_amount: Number(r.nominate_amount),
+    table_amount: Number(r.table_amount),
+    companion_amount: Number(r.companion_amount),
+    back_amount: Number(r.back_amount),
+  }));
 
   const sales = records.reduce((s, r) => s + Number(r.total_sales), 0);
   const guests = records.reduce((s, r) => s + r.guest_count, 0);
