@@ -13,6 +13,7 @@ import {
   Pie,
   ResponsiveContainer,
   LabelList,
+  Legend,
 } from "recharts";
 
 /** 親要素の実幅を ResizeObserver で測る（recharts の ResponsiveContainer が
@@ -175,6 +176,87 @@ export function CompositionDonut({
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+const LIGHT = "#9aa4b2";
+
+/** 費目別経費：当期 vs 前期（グループ棒） */
+export function CostCompareBars({
+  data,
+}: {
+  data: { label: string; current: number; previous: number }[];
+}) {
+  const [ref, w] = useWidth();
+  return (
+    <div ref={ref} className="h-56 w-full">
+      {w > 0 ? (
+        <BarChart
+          width={w}
+          height={224}
+          data={data}
+          margin={{ top: 8, right: 8, bottom: 0, left: 8 }}
+        >
+          <XAxis
+            dataKey="label"
+            tick={{ fontSize: 10, fill: MUTED }}
+            axisLine={{ stroke: TRACK }}
+            tickLine={false}
+          />
+          <Legend
+            verticalAlign="top"
+            height={24}
+            wrapperStyle={{ fontSize: 11, color: "var(--muted)" }}
+            formatter={(v) => (v === "current" ? "当期" : "前期")}
+          />
+          <Bar dataKey="current" name="current" fill={NAVY} radius={[3, 3, 0, 0]} maxBarSize={28} isAnimationActive={false} />
+          <Bar dataKey="previous" name="previous" fill={LIGHT} radius={[3, 3, 0, 0]} maxBarSize={28} isAnimationActive={false} />
+        </BarChart>
+      ) : null}
+    </div>
+  );
+}
+
+/** 曜日別 平均売上（月曜始まり。最大の曜日をアクセント色で強調） */
+export function WeekdayBars({
+  data,
+}: {
+  data: { label: string; avg: number; days: number }[];
+}) {
+  const [ref, w] = useWidth();
+  const max = Math.max(0, ...data.map((d) => d.avg));
+  return (
+    <div ref={ref} className="h-48 w-full">
+      {w > 0 ? (
+        <BarChart
+          width={w}
+          height={192}
+          data={data}
+          margin={{ top: 16, right: 8, bottom: 0, left: 8 }}
+        >
+          <XAxis
+            dataKey="label"
+            tick={{ fontSize: 11, fill: MUTED }}
+            axisLine={{ stroke: TRACK }}
+            tickLine={false}
+          />
+          <Bar dataKey="avg" radius={[3, 3, 0, 0]} maxBarSize={36} isAnimationActive={false}>
+            {data.map((d, i) => (
+              <Cell key={i} fill={d.avg === max && max > 0 ? ORANGE : NAVY} />
+            ))}
+            <LabelList
+              dataKey="avg"
+              position="top"
+              formatter={(v) => {
+                const n = Number(v) || 0;
+                return n ? Math.round(n / 1000) + "k" : "—";
+              }}
+              style={{ fontSize: 9, fill: MUTED }}
+            />
+          </Bar>
+        </BarChart>
+      ) : null}
     </div>
   );
 }

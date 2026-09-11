@@ -3,11 +3,40 @@ import { createClient } from "@/lib/supabase/server";
 import { requireMembership } from "@/lib/auth";
 import { jstDateString, yen, isValidDateStr } from "@/lib/daily";
 import { latestRecordedDate } from "@/lib/monthly-server";
-import { loadDashboardData } from "@/lib/dashboard-server";
+import { loadDashboardData, loadWeekdayAverages } from "@/lib/dashboard-server";
 import { pct } from "@/lib/finance";
-import { fmtMD, type DashView } from "@/lib/period";
-import { AchievementGauge, TrendBars, CompositionDonut } from "./charts";
+import { fmtMD, periodLabel, shiftRef, shiftYearRef, type DashView } from "@/lib/period";
+import {
+  AchievementGauge,
+  TrendBars,
+  CompositionDonut,
+  CostCompareBars,
+  WeekdayBars,
+} from "./charts";
 import { DashControls } from "./controls";
+
+type Tone = "good" | "bad" | undefined;
+
+/** 前期比（％）。上がる方が良い指標向け。invert で下がる方が良い指標に。 */
+function deltaPct(cur: number, prev: number, invert = false): { text: string; tone: Tone } {
+  if (prev === 0) {
+    if (cur === 0) return { text: "前期比 ±0%", tone: undefined };
+    return { text: "前期データなし", tone: undefined };
+  }
+  const r = (cur - prev) / prev;
+  const sign = r > 0 ? "+" : r < 0 ? "" : "±";
+  const tone: Tone = r === 0 ? undefined : (invert ? r < 0 : r > 0) ? "good" : "bad";
+  return { text: `前期比 ${sign}${(r * 100).toFixed(1)}%`, tone };
+}
+
+/** ポイント差（比率どうしの差）。FL率など。下がる方が良い。 */
+function deltaPt(cur: number | null, prev: number | null): { text: string; tone: Tone } {
+  if (cur === null || prev === null) return { text: "前期データなし", tone: undefined };
+  const diff = (cur - prev) * 100;
+  const sign = diff > 0 ? "+" : diff < 0 ? "" : "±";
+  const tone: Tone = diff === 0 ? undefined : diff < 0 ? "good" : "bad";
+  return { text: `前期比 ${sign}${diff.toFixed(1)}pt`, tone };
+}
 
 export default async function DashboardPage({
   searchParams,
@@ -40,8 +69,34 @@ export default async function DashboardPage({
       ? sp.d
       : ((await latestRecordedDate(store.id)) ?? jstDateString(0));
 
-  const d = await loadDashboardData(store.id, view, refDate);
+  const prevRefDate = shiftRef(view, refDate, -1);
+  const yearAgoRefDate = view === "month" ? shiftYearRef(refDate, -1) : null;
+
+  const [d, previous, yearAgo, weekday] = await Promise.all([
+    loadDashboardData(store.id, view, refDate),
+    loadDashboardData(store.id, view, prevRefDate),
+    yearAgoRefDate ? loadDashboardData(store.id, "month", yearAgoRefDate) : null,
+    loadWeekdayAverages(store.id, refDate),
+  ]);
   const costTotal = d.cogs + d.labor + d.fixedProrated + d.variable;
+  const prevCostTotal = previous.cogs + previous.labor + previous.fixedProrated + previous.variable;
+  const hasPrev = previous.recordedDays > 0;
+
+  const salesDelta = deltaPct(d.sales, previous.sales);
+  const profitDelta = deltaPct(d.operatingProfit, previous.operatingProfit);
+  const flDelta = deltaPt(d.flRate, previous.flRate);
+  const guestDelta = deltaPct(d.guests, previous.guests);
+  const avgSpendDelta =
+    d.avgSpend !== null && previous.avgSpend !== null
+      ? deltaPct(d.avgSpend, previous.avgSpend)
+      : { text: "前期データなし", tone: undefined as Tone };
+
+  const yearOverYear =
+    view === "month"
+      ? yearAgo && yearAgo.recordedDays > 0
+        ? deltaPct(d.sales, yearAgo.sales)
+        : { text: "前年データ蓄積中（13ヶ月で自動表示）", tone: undefined as Tone }
+      : null;
 
   return (
     <div className="space-y-5">
@@ -93,6 +148,19 @@ export default async function DashboardPage({
                     ? `目標 ${yen(d.salesTarget)}`
                     : "目標未設定"}
                 </div>
+                <div
+                  className={
+                    "mt-1 text-xs font-medium " +
+                    (salesDelta.tone === "good"
+                      ? "text-good"
+                      : salesDelta.tone === "bad"
+                        ? "text-bad"
+                        : "text-white/60")
+                  }
+                >
+                  {salesDelta.text}
+                  {yearOverYear ? ` ・ 前年同月比 ${yearOverYear.text}` : ""}
+                </div>
               </div>
               {d.salesTarget > 0 ? <AchievementGauge rate={d.targetRate} /> : null}
             </div>
@@ -102,16 +170,19 @@ export default async function DashboardPage({
               v={yen(d.operatingProfit)}
               sub={`利益率 ${pct(d.operatingMarginRate)}`}
               tone={d.operatingProfit < 0 ? "bad" : "good"}
+              delta={profitDelta}
             />
             <Kpi
               k="FL コスト率"
               v={pct(d.flRate)}
               sub={`原価 ${pct(d.cogsRate)} ・ 人件費 ${pct(d.laborRate)}`}
+              delta={flDelta}
             />
             <Kpi
               k="客数 / 客単価"
               v={`${d.guests} / ${d.avgSpend === null ? "—" : yen(d.avgSpend)}`}
               sub={`組数 ${d.groups}`}
+              delta={guestDelta}
             />
             <Kpi k="売掛残高" v={yen(d.receivableBalance)} sub="期間末時点" />
             {d.view === "month" && d.landingForecast !== null ? (
@@ -127,6 +198,36 @@ export default async function DashboardPage({
               />
             ) : null}
           </div>
+
+          {/* 前期比較サマリー */}
+          <Card title={`前期比較（前期：${periodLabel(view, prevRefDate)}）`}>
+            {hasPrev ? (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-muted">
+                    <th className="pb-1.5 text-left font-medium">指標</th>
+                    <th className="pb-1.5 text-right font-medium">当期</th>
+                    <th className="pb-1.5 text-right font-medium">前期</th>
+                    <th className="pb-1.5 text-right font-medium">差分</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <CompareRow label="売上" cur={yen(d.sales)} prev={yen(previous.sales)} delta={salesDelta} />
+                  <CompareRow label="客数" cur={`${d.guests}`} prev={`${previous.guests}`} delta={guestDelta} />
+                  <CompareRow
+                    label="客単価"
+                    cur={d.avgSpend === null ? "—" : yen(d.avgSpend)}
+                    prev={previous.avgSpend === null ? "—" : yen(previous.avgSpend)}
+                    delta={avgSpendDelta}
+                  />
+                  <CompareRow label="営業利益" cur={yen(d.operatingProfit)} prev={yen(previous.operatingProfit)} delta={profitDelta} />
+                  <CompareRow label="FL コスト率" cur={pct(d.flRate)} prev={pct(previous.flRate)} delta={flDelta} />
+                </tbody>
+              </table>
+            ) : (
+              <p className="text-sm text-muted">前期の記録がまだありません。</p>
+            )}
+          </Card>
 
           {/* charts */}
           <div className="grid gap-4 lg:grid-cols-2">
@@ -153,6 +254,22 @@ export default async function DashboardPage({
               />
               <Detail title="人件費の内訳" items={d.laborByItem} />
               <Detail title="流動費の内訳" items={d.variableByItem} />
+              {hasPrev ? (
+                <div className="mt-3 border-t border-line pt-3">
+                  <p className="mb-1 text-xs text-muted">当期 vs 前期</p>
+                  <CostCompareBars
+                    data={d.costByClass.map((c) => ({
+                      label: c.label,
+                      current: c.amount,
+                      previous:
+                        previous.costByClass.find((p) => p.key === c.key)?.amount ?? 0,
+                    }))}
+                  />
+                  <p className="mt-1 text-right text-xs text-muted">
+                    経費計 {yen(costTotal)}（前期 {yen(prevCostTotal)}）
+                  </p>
+                </div>
+              ) : null}
               <p className="mt-3 text-xs text-muted">
                 固定費・月給スタッフ（日割り）は記録日数ぶんの累計。人件費＝時給＋日払い＋キャストバック＋月給スタッフ。
               </p>
@@ -220,9 +337,51 @@ export default async function DashboardPage({
               <Empty />
             )}
           </Card>
+
+          {/* 曜日別平均 */}
+          <Card title="曜日別 平均売上（直近90日）">
+            {weekday.some((w) => w.days > 0) ? (
+              <>
+                <WeekdayBars data={weekday} />
+                <p className="mt-2 text-xs text-muted">
+                  オレンジ＝平均売上が最も高い曜日。シフトや仕入れの目安に。
+                </p>
+              </>
+            ) : (
+              <Empty />
+            )}
+          </Card>
         </>
       )}
     </div>
+  );
+}
+
+function CompareRow({
+  label,
+  cur,
+  prev,
+  delta,
+}: {
+  label: string;
+  cur: string;
+  prev: string;
+  delta: { text: string; tone: Tone };
+}) {
+  return (
+    <tr className="border-b border-line last:border-0">
+      <td className="py-1.5 text-muted">{label}</td>
+      <td className="py-1.5 text-right font-mono tabular-nums">{cur}</td>
+      <td className="py-1.5 text-right font-mono tabular-nums text-muted">{prev}</td>
+      <td
+        className={
+          "py-1.5 text-right font-mono text-xs tabular-nums " +
+          (delta.tone === "good" ? "text-good" : delta.tone === "bad" ? "text-bad" : "text-muted")
+        }
+      >
+        {delta.text.replace("前期比 ", "")}
+      </td>
+    </tr>
   );
 }
 
@@ -232,12 +391,14 @@ function Kpi({
   sub,
   tone,
   accent,
+  delta,
 }: {
   k: string;
   v: string;
   sub?: string;
   tone?: "good" | "bad";
   accent?: boolean;
+  delta?: { text: string; tone: Tone };
 }) {
   return (
     <div
@@ -256,6 +417,20 @@ function Kpi({
         {v}
       </div>
       {sub ? <div className="mt-1 text-xs text-muted">{sub}</div> : null}
+      {delta ? (
+        <div
+          className={
+            "mt-1 text-xs font-medium " +
+            (delta.tone === "good"
+              ? "text-good"
+              : delta.tone === "bad"
+                ? "text-bad"
+                : "text-muted")
+          }
+        >
+          {delta.text}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -90,3 +90,12 @@ export function datesInRange(start: string, end: string): string[] {
   for (let d = start; d <= end; d = addDays(d, 1)) out.push(d);
   return out;
 }
+
+/** ちょうど1年前の同じ月日（存在しない日は月末に丸める＝2/29対策） */
+export function shiftYearRef(ref: string, n: number): string {
+  const [y, m, d] = ref.split("-").map(Number);
+  const ny = y + n;
+  const dim = daysInMonth(`${ny}-${String(m).padStart(2, "0")}`);
+  const day = Math.min(d, dim);
+  return `${ny}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}

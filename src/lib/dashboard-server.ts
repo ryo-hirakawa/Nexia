@@ -3,6 +3,7 @@ import { daysInMonth, monthKeyOf, proratedFixed, proratedStaff } from "@/lib/fin
 import {
   periodRange,
   datesInRange,
+  addDays,
   type DashView,
 } from "@/lib/period";
 import { loadSetupDataForDate } from "@/lib/monthly-server";
@@ -275,4 +276,40 @@ export async function loadDashboardData(
     laborByItem,
     dailyTrend,
   };
+}
+
+export type WeekdayAvg = { dow: number; label: string; avg: number; days: number };
+
+const WEEKDAY_LABEL = ["日", "月", "火", "水", "木", "金", "土"];
+
+/** 直近 lookbackDays 日ぶんの記録から、曜日別の平均売上を出す */
+export async function loadWeekdayAverages(
+  storeId: string,
+  uptoDate: string,
+  lookbackDays = 90,
+): Promise<WeekdayAvg[]> {
+  const supabase = await createClient();
+  const start = addDays(uptoDate, -lookbackDays);
+
+  const { data } = await supabase
+    .from("daily_records")
+    .select("business_date, total_sales")
+    .eq("store_id", storeId)
+    .gte("business_date", start)
+    .lte("business_date", uptoDate);
+
+  const buckets = Array.from({ length: 7 }, () => ({ sum: 0, count: 0 }));
+  for (const r of data ?? []) {
+    const dow = new Date(r.business_date + "T00:00:00Z").getUTCDay();
+    buckets[dow].sum += Number(r.total_sales);
+    buckets[dow].count += 1;
+  }
+
+  // 月曜始まりで並べる
+  return [1, 2, 3, 4, 5, 6, 0].map((dow) => ({
+    dow,
+    label: WEEKDAY_LABEL[dow],
+    avg: buckets[dow].count > 0 ? Math.round(buckets[dow].sum / buckets[dow].count) : 0,
+    days: buckets[dow].count,
+  }));
 }
