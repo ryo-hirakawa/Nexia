@@ -14,6 +14,7 @@ import {
   datesInRange,
   addDays,
   type DashView,
+  type WeekdayAvg,
 } from "@/lib/period";
 import { loadSetupDataForDate } from "@/lib/monthly-server";
 import { PAYMENT_METHODS } from "@/lib/bar-preset";
@@ -61,7 +62,6 @@ export type DashboardData = {
 
   salesTarget: number;
   targetRate: number | null;
-  landingForecast: number | null;
 
   receivableBalance: number;
 
@@ -225,14 +225,10 @@ export async function loadDashboardData(
   const operatingProfit = sales - totalCost;
 
   const salesTarget = Number(tgtResult.data?.sales_target ?? 0);
-
-  let landingForecast: number | null = null;
-  if (view === "month" && salesTarget >= 0) {
-    const dayOfMonth = Number(refDate.slice(8));
-    if (dayOfMonth > 0 && dayOfMonth < dim && sales > 0) {
-      landingForecast = Math.round((sales / dayOfMonth) * dim);
-    }
-  }
+  // 月末着地予測（曜日別平均を使った予測）は loadWeekdayAverages の結果が
+  // 必要で、かつダッシュボード表示専用のため dashboard/page.tsx 側の
+  // projectMonthEndByWeekday() で計算する（ここでは往復を増やさないよう
+  // 計算しない）。
 
   // 売掛残高（期間末時点の店舗累計。detail=false のときは 0 のまま）
   const recvRows = recvResult.data ?? [];
@@ -334,7 +330,6 @@ export async function loadDashboardData(
     hasDepreciationLines,
     salesTarget,
     targetRate: salesTarget > 0 ? sales / salesTarget : null,
-    landingForecast,
     receivableBalance,
     byCategory,
     byPayment,
@@ -345,8 +340,6 @@ export async function loadDashboardData(
     dailyTrend,
   };
 }
-
-export type WeekdayAvg = { dow: number; label: string; avg: number; days: number };
 
 const WEEKDAY_LABEL = ["日", "月", "火", "水", "木", "金", "土"];
 

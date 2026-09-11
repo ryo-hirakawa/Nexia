@@ -104,3 +104,41 @@ export function shiftYearRef(ref: string, n: number): string {
   const day = Math.min(d, dim);
   return `${ny}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
+
+export type WeekdayAvg = { dow: number; label: string; avg: number; days: number };
+
+export type MonthEndProjection = {
+  forecast: number;
+  /** false のときは予測に必要なデータが不足している（0円の予測は出さない） */
+  hasEnoughData: boolean;
+};
+
+/**
+ * 曜日別平均（loadWeekdayAverages の結果）を使って月末売上を予測する。
+ * - 経過日数ぶんは実績（salesSoFar）をそのまま使う。
+ * - 残りの暦日は、その曜日の平均（直近90日）を1日ずつ積み上げる。定休日は
+ *   その曜日の平均が自然に0円になるので、暦日一律の日割りに比べて
+ *   休業日・繁忙曜日（金・土など）の偏りの影響を受けにくい。
+ * - 大型連休など単発のイベントは曜日平均には表れないため、この予測には
+ *   反映されない（呼び出し側の UI で明示すること）。
+ */
+export function projectMonthEndByWeekday(
+  refDate: string,
+  salesSoFar: number,
+  weekdayAverages: WeekdayAvg[],
+): MonthEndProjection {
+  const dim = daysInMonth(refDate);
+  const monthKey = refDate.slice(0, 7);
+  const dayOfMonth = Number(refDate.slice(8));
+  if (dayOfMonth <= 0 || dayOfMonth >= dim || salesSoFar <= 0) {
+    return { forecast: 0, hasEnoughData: false };
+  }
+  const avgByDow = new Map(weekdayAverages.map((w) => [w.dow, w.avg]));
+  let remaining = 0;
+  for (let day = dayOfMonth + 1; day <= dim; day++) {
+    const dateStr = `${monthKey}-${String(day).padStart(2, "0")}`;
+    const dow = new Date(dateStr + "T00:00:00Z").getUTCDay();
+    remaining += avgByDow.get(dow) ?? 0;
+  }
+  return { forecast: Math.round(salesSoFar + remaining), hasEnoughData: true };
+}

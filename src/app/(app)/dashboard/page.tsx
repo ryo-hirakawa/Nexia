@@ -10,7 +10,15 @@ import {
   type DashboardData,
 } from "@/lib/dashboard-server";
 import { pct, monthLabel, daysInMonth } from "@/lib/finance";
-import { addDays, fmtMDW, periodLabel, shiftRef, shiftYearRef, type DashView } from "@/lib/period";
+import {
+  addDays,
+  fmtMDW,
+  periodLabel,
+  shiftRef,
+  shiftYearRef,
+  projectMonthEndByWeekday,
+  type DashView,
+} from "@/lib/period";
 import {
   AchievementGauge,
   TrendBars,
@@ -202,19 +210,26 @@ export default async function DashboardPage({
         : { text: "前年データ蓄積中（13ヶ月で自動表示）", tone: undefined as Tone }
       : null;
 
-  // 月末着地予測の表示状態。計算式（dashboard-server.ts の landingForecast）は
-  // 変更せず、UI 側で「終了済みの月／データ不足／計算可能」の3状態を出し分ける。
+  // 月末着地予測。曜日別平均（直近90日、weekday）で残り日数を積み上げる方式。
+  // 経過日数ぶんは実績（d.sales）そのまま、残りは曜日ごとの平均を1日ずつ加算
+  // するので、定休日や金・土の偏りが暦日一律の日割りより影響しにくい。
+  // 大型連休など単発イベントは曜日平均には表れないため予測には反映されない
+  // （注記で明示する）。
   const dayOfMonth = Number(refDate.slice(8));
+  const projection =
+    view === "month" && !d.isMonthComplete
+      ? projectMonthEndByWeekday(refDate, d.sales, weekday)
+      : null;
   const forecastState: "complete" | "insufficient" | "ready" =
     view !== "month"
       ? "insufficient"
       : d.isMonthComplete
         ? "complete"
-        : d.landingForecast === null
+        : !projection?.hasEnoughData
           ? "insufficient"
           : "ready";
   const forecastGap =
-    d.landingForecast !== null && d.salesTarget > 0 ? d.landingForecast - d.salesTarget : null;
+    projection?.hasEnoughData && d.salesTarget > 0 ? projection.forecast - d.salesTarget : null;
 
   const insights = buildInsights({
     view,
@@ -320,7 +335,7 @@ export default async function DashboardPage({
                       <div className="flex items-baseline justify-between gap-2">
                         <span className="text-muted">月末売上予想</span>
                         <span className="overflow-x-auto whitespace-nowrap font-mono font-bold tabular-nums">
-                          {yen(d.landingForecast as number)}
+                          {yen(projection!.forecast)}
                         </span>
                       </div>
                       <div className="flex items-baseline justify-between gap-2">
@@ -337,16 +352,16 @@ export default async function DashboardPage({
                       <div className="flex items-baseline justify-between gap-2">
                         <span className="text-muted">予想達成率</span>
                         <span className="overflow-x-auto whitespace-nowrap font-mono font-bold tabular-nums">
-                          {d.salesTarget > 0 ? pct((d.landingForecast as number) / d.salesTarget) : "—"}
+                          {d.salesTarget > 0 ? pct(projection!.forecast / d.salesTarget) : "—"}
                         </span>
                       </div>
                     </div>
                     <p className="mt-2 text-xs text-muted">
-                      基準日: {fmtMDW(refDate)}時点の実績 {yen(d.sales)}（{dayOfMonth}日経過）を月{daysInMonth(refDate)}
-                      日換算。未入力日は0円として計算するため、未入力があると予想は低めに出ます。
+                      基準日: {fmtMDW(refDate)}時点の実績 {yen(d.sales)}（{dayOfMonth}日経過）＋残り{daysInMonth(refDate) - dayOfMonth}
+                      日ぶんの曜日別平均（直近90日）を積み上げ。未入力日は0円として計算するため、未入力があると予想は低めに出ます。
                     </p>
                     <p className="mt-1 text-xs text-muted">
-                      定休日も含めた暦日ベースの単純な日割り予測です（曜日ごとの傾向は考慮していません）。
+                      定休日・曜日ごとの傾向は織り込みますが、大型連休など単発の特別なイベントの影響は反映されません。
                     </p>
                   </div>
                 )
