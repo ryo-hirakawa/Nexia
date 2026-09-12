@@ -82,12 +82,26 @@ const groupSum = <T>(rows: T[], key: (r: T) => string, val: (r: T) => number) =>
   return [...m.entries()].map(([name, amount]) => ({ name, amount }));
 };
 
+// TEMPORARY diagnostic instrumentation (to be removed after profiling).
+// Module-level, overwritten on each call - fine for one-request-at-a-time
+// manual diagnosis, not meant to survive as production code.
+export const __lastQueryTimings: { label: string; ms: number; count: number }[] = [];
+function timed<T extends { data: unknown }>(label: string, p: PromiseLike<T>): Promise<T> {
+  const t0 = Date.now();
+  return Promise.resolve(p).then((res) => {
+    const count = Array.isArray(res.data) ? res.data.length : res.data ? 1 : 0;
+    __lastQueryTimings.push({ label, ms: Date.now() - t0, count });
+    return res;
+  });
+}
+
 export async function loadDashboardData(
   storeId: string,
   view: DashView,
   refDate: string,
   opts?: { detail?: boolean },
 ): Promise<DashboardData> {
+  __lastQueryTimings.length = 0;
   // detail=false は前月/前年など「比較用の集計値だけ欲しい」呼び出し向け。
   // カテゴリ別・決済別・キャスト別・売掛残高はダッシュボードの比較表示では
   // 使わないため、該当クエリ自体を投げずに往復回数を減らす。
@@ -104,61 +118,82 @@ export async function loadDashboardData(
   // daily_records!inner(store_id, business_date) の埋め込みJOINで
   // store_id×期間から直接引く（daily_receivable_entries で既に使っていた
   // パターンと同じ）。
-  const [setup, recsResult, tgtResult, recvResult, costsResult, catResult, payResult, castResult] =
+  const [{ data: setup }, recsResult, tgtResult, recvResult, costsResult, catResult, payResult, castResult] =
     await Promise.all([
-      loadSetupDataForDate(storeId, refDate),
-      supabase
-        .from("daily_records")
-        .select("id, business_date, status, total_sales, guest_count, group_count")
-        .eq("store_id", storeId)
-        .gte("business_date", range.start)
-        .lte("business_date", range.end)
-        .order("business_date"),
-      supabase
-        .from("monthly_targets")
-        .select("sales_target")
-        .eq("store_id", storeId)
-        .eq("year_month", monthKey)
-        .maybeSingle(),
+      timed("setup", loadSetupDataForDate(storeId, refDate).then((data) => ({ data }))),
+      timed(
+        "records",
+        supabase
+          .from("daily_records")
+          .select("id, business_date, status, total_sales, guest_count, group_count")
+          .eq("store_id", storeId)
+          .gte("business_date", range.start)
+          .lte("business_date", range.end)
+          .order("business_date"),
+      ),
+      timed(
+        "targets",
+        supabase
+          .from("monthly_targets")
+          .select("sales_target")
+          .eq("store_id", storeId)
+          .eq("year_month", monthKey)
+          .maybeSingle(),
+      ),
       detail
-        ? supabase
-            .from("daily_receivable_entries")
-            .select("direction, amount, daily_records!inner(store_id, business_date)")
-            .eq("daily_records.store_id", storeId)
-            .lte("daily_records.business_date", range.end)
+        ? timed(
+            "receivable",
+            supabase
+              .from("daily_receivable_entries")
+              .select("direction, amount, daily_records!inner(store_id, business_date)")
+              .eq("daily_records.store_id", storeId)
+              .lte("daily_records.business_date", range.end),
+          )
         : Promise.resolve({ data: [] as { direction: string; amount: number }[] }),
       // 費目別経費（当該/比較の両方で使う）は常に取得
-      supabase
-        .from("daily_costs")
-        .select("cost_class, item, amount, daily_records!inner(store_id, business_date)")
-        .eq("daily_records.store_id", storeId)
-        .gte("daily_records.business_date", range.start)
-        .lte("daily_records.business_date", range.end),
+      timed(
+        "costs",
+        supabase
+          .from("daily_costs")
+          .select("cost_class, item, amount, daily_records!inner(store_id, business_date)")
+          .eq("daily_records.store_id", storeId)
+          .gte("daily_records.business_date", range.start)
+          .lte("daily_records.business_date", range.end),
+      ),
       detail
-        ? supabase
-            .from("daily_sales_categories")
-            .select("category, amount, daily_records!inner(store_id, business_date)")
-            .eq("daily_records.store_id", storeId)
-            .gte("daily_records.business_date", range.start)
-            .lte("daily_records.business_date", range.end)
+        ? timed(
+            "categories",
+            supabase
+              .from("daily_sales_categories")
+              .select("category, amount, daily_records!inner(store_id, business_date)")
+              .eq("daily_records.store_id", storeId)
+              .gte("daily_records.business_date", range.start)
+              .lte("daily_records.business_date", range.end),
+          )
         : Promise.resolve({ data: [] as { category: string; amount: number }[] }),
       detail
-        ? supabase
-            .from("daily_payments")
-            .select("method, amount, daily_records!inner(store_id, business_date)")
-            .eq("daily_records.store_id", storeId)
-            .gte("daily_records.business_date", range.start)
-            .lte("daily_records.business_date", range.end)
+        ? timed(
+            "payments",
+            supabase
+              .from("daily_payments")
+              .select("method, amount, daily_records!inner(store_id, business_date)")
+              .eq("daily_records.store_id", storeId)
+              .gte("daily_records.business_date", range.start)
+              .lte("daily_records.business_date", range.end),
+          )
         : Promise.resolve({ data: [] as { method: string; amount: number }[] }),
       detail
-        ? supabase
-            .from("daily_cast_sales")
-            .select(
-              "cast_name, nominate_amount, table_amount, companion_amount, back_amount, daily_records!inner(store_id, business_date)",
-            )
-            .eq("daily_records.store_id", storeId)
-            .gte("daily_records.business_date", range.start)
-            .lte("daily_records.business_date", range.end)
+        ? timed(
+            "casts",
+            supabase
+              .from("daily_cast_sales")
+              .select(
+                "cast_name, nominate_amount, table_amount, companion_amount, back_amount, daily_records!inner(store_id, business_date)",
+              )
+              .eq("daily_records.store_id", storeId)
+              .gte("daily_records.business_date", range.start)
+              .lte("daily_records.business_date", range.end),
+          )
         : Promise.resolve({
             data: [] as {
               cast_name: string;

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requireMembership } from "@/lib/auth";
-import { loadDashboardData, loadWeekdayAverages, loadMonthlyYoY } from "@/lib/dashboard-server";
+import { loadDashboardData, loadWeekdayAverages, loadMonthlyYoY, __lastQueryTimings } from "@/lib/dashboard-server";
 import { shiftRef, shiftYearRef } from "@/lib/period";
 
 // TEMPORARY diagnostic route to find where dashboard latency actually goes.
@@ -37,6 +37,7 @@ export async function GET() {
   // these alone should be much faster than the combined Promise.all below.
   await loadDashboardData(store.id, view, refDate);
   mark("SOLO: loadDashboardData(detail:true)");
+  const detailTrueQueryTimings = [...__lastQueryTimings];
 
   await loadDashboardData(store.id, view, prevRefDate, { detail: false });
   mark("SOLO: loadDashboardData(detail:false)");
@@ -59,6 +60,7 @@ export async function GET() {
   return NextResponse.json({
     isPlatformAdmin: membership.isPlatformAdmin,
     marks,
+    detailTrueQueryTimings,
     total: Math.round(performance.now() - t0),
   });
 }
