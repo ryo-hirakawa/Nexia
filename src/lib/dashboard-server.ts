@@ -97,11 +97,23 @@ export async function loadDashboardData(
   const monthKey = monthKeyOf(refDate);
   const dim = daysInMonth(refDate);
 
+  type Breakdown = {
+    categories: { category: string; amount: number }[];
+    payments: { method: string; amount: number }[];
+    casts: {
+      cast_name: string;
+      nominate_amount: number;
+      table_amount: number;
+      companion_amount: number;
+      back_amount: number;
+    }[];
+  };
+
   // 互いに依存しないクエリは1回の往復(Promise.all)にまとめる。
-  // costs/categories/payments/casts は daily_records!inner(store_id,
-  // business_date) の埋め込みJOINで store_id×期間から直接引く
-  // （daily_receivable_entries で既に使っていたパターンと同じ）。
-  const [setup, recsResult, tgtResult, recvResult, costsResult, catResult, payResult, castResult] =
+  // costs は daily_records!inner(store_id, business_date) の埋め込みJOIN
+  // で store_id×期間から直接引く（daily_receivable_entries で既に
+  // 使っていたパターンと同じ）。
+  const [setup, recsResult, tgtResult, recvResult, costsResult, breakdownResult] =
     await Promise.all([
       loadSetupDataForDate(storeId, refDate),
       supabase
@@ -133,41 +145,21 @@ export async function loadDashboardData(
         .eq("daily_records.store_id", storeId)
         .gte("daily_records.business_date", range.start)
         .lte("daily_records.business_date", range.end),
+      // カテゴリ別・決済別・キャスト別は、比較表示では使わないので
+      // detail=false のときは投げない。3クエリともそれぞれ単独実行でも
+      // 約600ms、同時実行では約2秒まで悪化していたのを実測(件数はどれも
+      // 30〜45行程度で行数自体が原因ではなく、リクエスト単位の固定コスト
+      // が3回分積み重なっていたため)。1回のRPC(dashboard_breakdown、
+      // 0011番マイグレーション)にまとめてリクエスト数を3→1に減らした。
       detail
-        ? supabase
-            .from("daily_sales_categories")
-            .select("category, amount, daily_records!inner(store_id, business_date)")
-            .eq("daily_records.store_id", storeId)
-            .gte("daily_records.business_date", range.start)
-            .lte("daily_records.business_date", range.end)
-        : Promise.resolve({ data: [] as { category: string; amount: number }[] }),
-      detail
-        ? supabase
-            .from("daily_payments")
-            .select("method, amount, daily_records!inner(store_id, business_date)")
-            .eq("daily_records.store_id", storeId)
-            .gte("daily_records.business_date", range.start)
-            .lte("daily_records.business_date", range.end)
-        : Promise.resolve({ data: [] as { method: string; amount: number }[] }),
-      detail
-        ? supabase
-            .from("daily_cast_sales")
-            .select(
-              "cast_name, nominate_amount, table_amount, companion_amount, back_amount, daily_records!inner(store_id, business_date)",
-            )
-            .eq("daily_records.store_id", storeId)
-            .gte("daily_records.business_date", range.start)
-            .lte("daily_records.business_date", range.end)
-        : Promise.resolve({
-            data: [] as {
-              cast_name: string;
-              nominate_amount: number;
-              table_amount: number;
-              companion_amount: number;
-              back_amount: number;
-            }[],
-          }),
+        ? supabase.rpc("dashboard_breakdown", {
+            p_store_id: storeId,
+            p_start: range.start,
+            p_end: range.end,
+          })
+        : Promise.resolve({ data: { categories: [], payments: [], casts: [] } as Breakdown }),
     ]);
+  const breakdown = (breakdownResult.data ?? { categories: [], payments: [], casts: [] }) as Breakdown;
 
   // 集計範囲に含まれる暦日数（記録の有無・休業日は問わない）。
   // 固定費・月給は「記録がある日数」ではなくこの暦日数で按分する。
@@ -183,15 +175,15 @@ export async function loadDashboardData(
     item: r.item,
     amount: Number(r.amount),
   }));
-  const categories = (catResult.data ?? []).map((r) => ({
+  const categories = (breakdown.categories ?? []).map((r) => ({
     category: r.category,
     amount: Number(r.amount),
   }));
-  const payments = (payResult.data ?? []).map((r) => ({
+  const payments = (breakdown.payments ?? []).map((r) => ({
     method: r.method,
     amount: Number(r.amount),
   }));
-  const casts = (castResult.data ?? []).map((r) => ({
+  const casts = (breakdown.casts ?? []).map((r) => ({
     cast_name: r.cast_name,
     nominate_amount: Number(r.nominate_amount),
     table_amount: Number(r.table_amount),
