@@ -245,6 +245,13 @@ export default async function DashboardPage({
           />
         </div>
 
+        {d.fetchErrors.length > 0 ? (
+          <p className="mt-3 rounded-lg border border-bad/30 bg-bad/5 px-3 py-2 text-sm text-bad">
+            一部データの取得に失敗しました（{d.fetchErrors.join("・")}）。
+            表示中の数値にこれらは反映されていない可能性があります。再読み込みしてください。
+          </p>
+        ) : null}
+
         {!d.hasSetup ? (
           <p className="mt-3 rounded-lg border border-warn/30 bg-warn/5 px-3 py-2 text-sm text-warn">
             この月の

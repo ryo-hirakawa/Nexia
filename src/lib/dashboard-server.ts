@@ -73,6 +73,9 @@ export type DashboardData = {
   variableByItem: { name: string; amount: number }[];
   laborByItem: { name: string; amount: number }[];
   dailyTrend: { date: string; sales: number; hasRecord: boolean }[];
+
+  /** 取得に失敗した項目（"0件"と区別するため。空配列なら全項目取得成功） */
+  fetchErrors: string[];
 };
 
 const rate = (n: number, d: number) => (d > 0 ? n / d : null);
@@ -160,6 +163,16 @@ export async function loadDashboardData(
         : Promise.resolve({ data: { categories: [], payments: [], casts: [] } as Breakdown }),
     ]);
   const breakdown = (breakdownResult.data ?? { categories: [], payments: [], casts: [] }) as Breakdown;
+
+  // 取得失敗を「0円」「データなし」と混同しないよう、失敗した項目名を
+  // 記録しておく（? ?? [] / ?? 0 は失敗時も成功時の空扱いと区別できない
+  // ため、ここで明示的に .error を見る）。
+  const fetchErrors: string[] = [];
+  if (recsResult.error) fetchErrors.push("日次実績");
+  if (tgtResult.error) fetchErrors.push("月間目標");
+  if (costsResult.error) fetchErrors.push("経費内訳");
+  if (detail && "error" in recvResult && recvResult.error) fetchErrors.push("売掛残高");
+  if (detail && "error" in breakdownResult && breakdownResult.error) fetchErrors.push("カテゴリ・決済・キャスト別");
 
   // 集計範囲に含まれる暦日数（記録の有無・休業日は問わない）。
   // 固定費・月給は「記録がある日数」ではなくこの暦日数で按分する。
@@ -324,6 +337,7 @@ export async function loadDashboardData(
     variableByItem,
     laborByItem,
     dailyTrend,
+    fetchErrors,
   };
 }
 

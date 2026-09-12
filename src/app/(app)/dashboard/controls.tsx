@@ -36,6 +36,21 @@ export function DashControls({
 
   return (
     <div className={pending ? "opacity-60 transition-opacity" : "transition-opacity"}>
+      {/* 日付・週・月・店舗の切り替え中は、下のKPIカードなど画面全体に
+          薄いオーバーレイをかぶせる。position:fixed で自身のDOM位置とは
+          無関係に画面全体を覆うため、page.tsx側の構造を変えずに済む。
+          切り替え前の数値が「新しい条件の実績」に見えてしまわないように、
+          読み込み中であることを画面全体で明示する。 */}
+      {pending ? (
+        <div
+          aria-hidden="true"
+          className="fixed inset-0 z-40 flex items-start justify-center bg-white/40 pt-24 backdrop-blur-[1px] dark:bg-black/30"
+        >
+          <span className="rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-medium text-muted shadow-sm">
+            読み込み中…
+          </span>
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex overflow-hidden rounded-lg border border-line text-sm">
           {VIEWS.map((v) => (
