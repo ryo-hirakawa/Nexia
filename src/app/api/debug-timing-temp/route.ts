@@ -57,10 +57,35 @@ export async function GET() {
   ]);
   mark("main Promise.all (dashboard data)");
 
+  // Concurrency-contention test: run the SAME 4 "detail" queries the
+  // categories/costs/payments/casts branches issue, but ONE AT A TIME
+  // (sequential, not Promise.all) with nothing else in flight. If each is
+  // fast alone but slow when run together (as in detailTrueQueryTimings
+  // above), that proves a shared concurrency/connection limit is queueing
+  // them rather than each query being inherently slow.
+  const range = { start: `${refDate.slice(0, 7)}-01`, end: refDate };
+  const seqTimings: { label: string; ms: number; count: number }[] = [];
+  const seqTable = async (label: string, table: string, cols: string) => {
+    const t0q = Date.now();
+    const { data } = await supabase
+      .from(table)
+      .select(`${cols}, daily_records!inner(store_id, business_date)`)
+      .eq("daily_records.store_id", store.id)
+      .gte("daily_records.business_date", range.start)
+      .lte("daily_records.business_date", range.end);
+    seqTimings.push({ label, ms: Date.now() - t0q, count: data?.length ?? 0 });
+  };
+  await seqTable("SEQ: categories", "daily_sales_categories", "category, amount");
+  await seqTable("SEQ: costs", "daily_costs", "cost_class, item, amount");
+  await seqTable("SEQ: payments", "daily_payments", "method, amount");
+  await seqTable("SEQ: casts", "daily_cast_sales", "cast_name, nominate_amount, table_amount, companion_amount, back_amount");
+  mark("sequential detail queries (one at a time)");
+
   return NextResponse.json({
     isPlatformAdmin: membership.isPlatformAdmin,
     marks,
     detailTrueQueryTimings,
+    seqTimings,
     total: Math.round(performance.now() - t0),
   });
 }
