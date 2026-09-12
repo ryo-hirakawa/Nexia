@@ -82,26 +82,12 @@ const groupSum = <T>(rows: T[], key: (r: T) => string, val: (r: T) => number) =>
   return [...m.entries()].map(([name, amount]) => ({ name, amount }));
 };
 
-// TEMPORARY diagnostic instrumentation (to be removed after profiling).
-// Module-level, overwritten on each call - fine for one-request-at-a-time
-// manual diagnosis, not meant to survive as production code.
-export const __lastQueryTimings: { label: string; ms: number; count: number }[] = [];
-function timed<T extends { data: unknown }>(label: string, p: PromiseLike<T>): Promise<T> {
-  const t0 = Date.now();
-  return Promise.resolve(p).then((res) => {
-    const count = Array.isArray(res.data) ? res.data.length : res.data ? 1 : 0;
-    __lastQueryTimings.push({ label, ms: Date.now() - t0, count });
-    return res;
-  });
-}
-
 export async function loadDashboardData(
   storeId: string,
   view: DashView,
   refDate: string,
   opts?: { detail?: boolean },
 ): Promise<DashboardData> {
-  __lastQueryTimings.length = 0;
   // detail=false は前月/前年など「比較用の集計値だけ欲しい」呼び出し向け。
   // カテゴリ別・決済別・キャスト別・売掛残高はダッシュボードの比較表示では
   // 使わないため、該当クエリ自体を投げずに往復回数を減らす。
@@ -112,88 +98,66 @@ export async function loadDashboardData(
   const dim = daysInMonth(refDate);
 
   // 互いに依存しないクエリは1回の往復(Promise.all)にまとめる。
-  // Supabase(東京)とVercelの実行環境(米国)の往復は1回あたり数百msかかるため、
-  // 「records を取ってから daily_record_id で子テーブルを引く」という
-  // 2段階の直列往復を避け、costs/categories/payments/casts も
-  // daily_records!inner(store_id, business_date) の埋め込みJOINで
-  // store_id×期間から直接引く（daily_receivable_entries で既に使っていた
-  // パターンと同じ）。
-  const [{ data: setup }, recsResult, tgtResult, recvResult, costsResult, catResult, payResult, castResult] =
+  // costs/categories/payments/casts は daily_records!inner(store_id,
+  // business_date) の埋め込みJOINで store_id×期間から直接引く
+  // （daily_receivable_entries で既に使っていたパターンと同じ）。
+  const [setup, recsResult, tgtResult, recvResult, costsResult, catResult, payResult, castResult] =
     await Promise.all([
-      timed("setup", loadSetupDataForDate(storeId, refDate).then((data) => ({ data }))),
-      timed(
-        "records",
-        supabase
-          .from("daily_records")
-          .select("id, business_date, status, total_sales, guest_count, group_count")
-          .eq("store_id", storeId)
-          .gte("business_date", range.start)
-          .lte("business_date", range.end)
-          .order("business_date"),
-      ),
-      timed(
-        "targets",
-        supabase
-          .from("monthly_targets")
-          .select("sales_target")
-          .eq("store_id", storeId)
-          .eq("year_month", monthKey)
-          .maybeSingle(),
-      ),
+      loadSetupDataForDate(storeId, refDate),
+      supabase
+        .from("daily_records")
+        .select("id, business_date, status, total_sales, guest_count, group_count")
+        .eq("store_id", storeId)
+        .gte("business_date", range.start)
+        .lte("business_date", range.end)
+        .order("business_date"),
+      supabase
+        .from("monthly_targets")
+        .select("sales_target")
+        .eq("store_id", storeId)
+        .eq("year_month", monthKey)
+        .maybeSingle(),
+      // 売掛残高は「期間末までの全履歴」を毎回スキャンする必要があり
+      // (前日以前からの繰越残高のため)、実測でこの画面の最大のボトルネック
+      // だった(2年分・841件を毎回フェッチしてJS側で合計、約2.7秒)。
+      // Postgres側で1行の合計だけを返すRPC(receivable_balance, 0010番
+      // マイグレーション)に置き換え、行の転送とRLSの行ごとのEXISTS判定を
+      // 「1クエリぶんの集計」に減らした。
       detail
-        ? timed(
-            "receivable",
-            supabase
-              .from("daily_receivable_entries")
-              .select("direction, amount, daily_records!inner(store_id, business_date)")
-              .eq("daily_records.store_id", storeId)
-              .lte("daily_records.business_date", range.end),
-          )
-        : Promise.resolve({ data: [] as { direction: string; amount: number }[] }),
+        ? supabase.rpc("receivable_balance", { p_store_id: storeId, p_as_of: range.end })
+        : Promise.resolve({ data: 0 as number | null }),
       // 費目別経費（当該/比較の両方で使う）は常に取得
-      timed(
-        "costs",
-        supabase
-          .from("daily_costs")
-          .select("cost_class, item, amount, daily_records!inner(store_id, business_date)")
-          .eq("daily_records.store_id", storeId)
-          .gte("daily_records.business_date", range.start)
-          .lte("daily_records.business_date", range.end),
-      ),
+      supabase
+        .from("daily_costs")
+        .select("cost_class, item, amount, daily_records!inner(store_id, business_date)")
+        .eq("daily_records.store_id", storeId)
+        .gte("daily_records.business_date", range.start)
+        .lte("daily_records.business_date", range.end),
       detail
-        ? timed(
-            "categories",
-            supabase
-              .from("daily_sales_categories")
-              .select("category, amount, daily_records!inner(store_id, business_date)")
-              .eq("daily_records.store_id", storeId)
-              .gte("daily_records.business_date", range.start)
-              .lte("daily_records.business_date", range.end),
-          )
+        ? supabase
+            .from("daily_sales_categories")
+            .select("category, amount, daily_records!inner(store_id, business_date)")
+            .eq("daily_records.store_id", storeId)
+            .gte("daily_records.business_date", range.start)
+            .lte("daily_records.business_date", range.end)
         : Promise.resolve({ data: [] as { category: string; amount: number }[] }),
       detail
-        ? timed(
-            "payments",
-            supabase
-              .from("daily_payments")
-              .select("method, amount, daily_records!inner(store_id, business_date)")
-              .eq("daily_records.store_id", storeId)
-              .gte("daily_records.business_date", range.start)
-              .lte("daily_records.business_date", range.end),
-          )
+        ? supabase
+            .from("daily_payments")
+            .select("method, amount, daily_records!inner(store_id, business_date)")
+            .eq("daily_records.store_id", storeId)
+            .gte("daily_records.business_date", range.start)
+            .lte("daily_records.business_date", range.end)
         : Promise.resolve({ data: [] as { method: string; amount: number }[] }),
       detail
-        ? timed(
-            "casts",
-            supabase
-              .from("daily_cast_sales")
-              .select(
-                "cast_name, nominate_amount, table_amount, companion_amount, back_amount, daily_records!inner(store_id, business_date)",
-              )
-              .eq("daily_records.store_id", storeId)
-              .gte("daily_records.business_date", range.start)
-              .lte("daily_records.business_date", range.end),
-          )
+        ? supabase
+            .from("daily_cast_sales")
+            .select(
+              "cast_name, nominate_amount, table_amount, companion_amount, back_amount, daily_records!inner(store_id, business_date)",
+            )
+            .eq("daily_records.store_id", storeId)
+            .gte("daily_records.business_date", range.start)
+            .lte("daily_records.business_date", range.end)
         : Promise.resolve({
             data: [] as {
               cast_name: string;
@@ -266,12 +230,7 @@ export async function loadDashboardData(
   // 計算しない）。
 
   // 売掛残高（期間末時点の店舗累計。detail=false のときは 0 のまま）
-  const recvRows = recvResult.data ?? [];
-  const receivableBalance = recvRows.reduce(
-    (s, r) =>
-      s + (r.direction === "incurred" ? Number(r.amount) : -Number(r.amount)),
-    0,
-  );
+  const receivableBalance = Number(recvResult.data ?? 0);
 
   const byCategory = groupSum(
     categories,
