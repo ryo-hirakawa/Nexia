@@ -30,7 +30,7 @@ export default async function AppLayout({
   }
   nav.push({ href: "/help", label: "使い方" });
   nav.push({ href: "/settings", label: "設定" });
-  if (membership.isPlatformAdmin) {
+  if (membership.isPlatformAdmin || hasRole(membership, "owner")) {
     nav.push({ href: "/admin", label: "統括" });
   }
 

@@ -112,6 +112,16 @@ export async function loadVariableItems(storeId: string): Promise<string[]> {
   return (data ?? []).map((r) => r.name);
 }
 
+export async function loadSalesCategories(storeId: string): Promise<string[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("sales_categories")
+    .select("name, sort_order")
+    .eq("store_id", storeId)
+    .order("sort_order");
+  return (data ?? []).map((r) => r.name);
+}
+
 /** 記録がある一番新しい営業日。無ければ null。 */
 export async function latestRecordedDate(
   storeId: string,

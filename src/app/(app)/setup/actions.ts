@@ -110,3 +110,28 @@ export async function saveVariableItems(
   revalidatePath(`/setup/${storeId}`);
   return { ok: true };
 }
+
+export async function saveSalesCategories(
+  storeId: string,
+  names: string[],
+): Promise<Result> {
+  await requireMembership();
+  const supabase = await createClient();
+
+  const clean = [
+    ...new Set(names.map((s) => s.trim()).filter((s) => s !== "")),
+  ].slice(0, 30);
+
+  await supabase.from("sales_categories").delete().eq("store_id", storeId);
+
+  if (clean.length) {
+    const { error } = await supabase.from("sales_categories").insert(
+      clean.map((name, i) => ({ store_id: storeId, name, sort_order: i })),
+    );
+    if (error) return { ok: false, error: error.message };
+  }
+
+  revalidatePath(`/setup/${storeId}`);
+  revalidatePath("/input");
+  return { ok: true };
+}

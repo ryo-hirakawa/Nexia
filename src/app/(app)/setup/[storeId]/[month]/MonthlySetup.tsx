@@ -8,6 +8,7 @@ import { FIXED_CATEGORIES, type MonthlySetupForm } from "@/lib/monthly";
 import {
  saveMonthlySetup,
  saveVariableItems,
+ saveSalesCategories,
 } from "@/app/(app)/setup/actions";
 
 const num = (s: string) => {
@@ -24,6 +25,7 @@ export default function MonthlySetup({
  initial,
  prev,
  variableItems,
+ salesCategories,
  nextMonth,
  prevMonth,
 }: {
@@ -31,6 +33,7 @@ export default function MonthlySetup({
  initial: MonthlySetupForm;
  prev: MonthlySetupForm;
  variableItems: string[];
+ salesCategories: string[];
  prevMonthKey: string;
  nextMonth: string;
  prevMonth: string;
@@ -54,6 +57,8 @@ export default function MonthlySetup({
  );
  const [vitems, setVitems] = useState<string[]>(variableItems);
  const [newItem, setNewItem] = useState("");
+ const [cats, setCats] = useState<string[]>(salesCategories);
+ const [newCat, setNewCat] = useState("");
  const [salesTarget, setSalesTarget] = useState(str(initial.salesTarget));
 
  const [error, setError] = useState<string | null>(null);
@@ -112,6 +117,11 @@ export default function MonthlySetup({
  const r2 = await saveVariableItems(initial.storeId, vitems);
  if (!r2.ok) {
  setError(r2.error);
+ return;
+ }
+ const r3 = await saveSalesCategories(initial.storeId, cats);
+ if (!r3.ok) {
+ setError(r3.error);
  return;
  }
  setSavedMsg("保存しました");
@@ -196,6 +206,59 @@ export default function MonthlySetup({
  <span className="font-mono text-xs tabular-nums text-muted">
  {yen(num(salesTarget))}
  </span>
+ </div>
+ </section>
+
+ {/* 売上カテゴリ */}
+ <section className="rounded-xl border border-line bg-surface p-4 dark:bg-surface">
+ <h2 className="mb-1 text-sm font-semibold">売上カテゴリ</h2>
+ <p className="mb-3 text-xs text-muted">
+ 日次入力の「売上内訳」で出てくる項目。店舗共通（月ごとの設定ではありません）。業態に合わせて自由に追加・削除できます。
+ </p>
+ <div className="flex flex-wrap gap-2">
+ {cats.map((c) => (
+ <span
+ key={c}
+ className="inline-flex items-center gap-1 rounded-full border border-line px-3 py-1 text-sm "
+ >
+ {c}
+ <button
+ type="button"
+ onClick={() => setCats(cats.filter((x) => x !== c))}
+ className="text-muted hover:text-bad"
+ aria-label={`${c} を削除`}
+ >
+ ×
+ </button>
+ </span>
+ ))}
+ </div>
+ <div className="mt-3 flex gap-2">
+ <input
+ placeholder="カテゴリを追加（例：鉄板焼きコース）"
+ value={newCat}
+ onChange={(e) => setNewCat(e.target.value)}
+ onKeyDown={(e) => {
+ if (e.key === "Enter") {
+ e.preventDefault();
+ const v = newCat.trim();
+ if (v && !cats.includes(v)) setCats([...cats, v]);
+ setNewCat("");
+ }
+ }}
+ className={inputCls + " w-56"}
+ />
+ <button
+ type="button"
+ onClick={() => {
+ const v = newCat.trim();
+ if (v && !cats.includes(v)) setCats([...cats, v]);
+ setNewCat("");
+ }}
+ className="rounded-md border border-line px-3 py-1 text-sm "
+ >
+ ＋ 追加
+ </button>
  </div>
  </section>
 

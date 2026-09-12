@@ -3,8 +3,14 @@ import { createClient } from "@/lib/supabase/server";
 import { requireMembership } from "@/lib/auth";
 import { isValidDateStr, addDays } from "@/lib/daily";
 import { loadDailyRecord } from "@/lib/daily-server";
-import { loadSetupDataForDate, loadVariableItems } from "@/lib/monthly-server";
+import {
+  loadSetupDataForDate,
+  loadVariableItems,
+  loadSalesCategories,
+} from "@/lib/monthly-server";
 import { daysInMonth } from "@/lib/finance";
+import { SALES_CATEGORIES as BAR_SALES_CATEGORIES } from "@/lib/bar-preset";
+import { SALES_CATEGORIES as RESTAURANT_SALES_CATEGORIES } from "@/lib/restaurant-preset";
 import DailyForm from "./DailyForm";
 
 export default async function DailyInputPage({
@@ -20,16 +26,20 @@ export default async function DailyInputPage({
   const supabase = await createClient();
   const { data: store } = await supabase
     .from("stores")
-    .select("id, name")
+    .select("id, name, industry")
     .eq("id", storeId)
     .maybeSingle();
   if (!store) notFound();
 
-  const [record, setup, variableItems] = await Promise.all([
+  const [record, setup, variableItems, salesCategories] = await Promise.all([
     loadDailyRecord(storeId, date),
     loadSetupDataForDate(storeId, date),
     loadVariableItems(storeId),
+    loadSalesCategories(storeId),
   ]);
+
+  const presetCategories =
+    store.industry === "restaurant" ? RESTAURANT_SALES_CATEGORIES : BAR_SALES_CATEGORIES;
 
   const dim = daysInMonth(date);
   const perDay = (m: number) => (dim > 0 ? Math.round(m / dim) : 0);
@@ -52,12 +62,14 @@ export default async function DailyInputPage({
       initial={record}
       storeName={store.name}
       storeId={storeId}
+      industry={store.industry}
       prevDate={addDays(date, -1)}
       nextDate={addDays(date, 1)}
       fixedLines={fixedLines}
       staffLines={staffLines}
       staffPerDay={staffPerDay}
       variableItems={variableItems}
+      salesCategories={salesCategories.length ? salesCategories : [...presetCategories]}
       setupMonth={monthKey}
       setupExists={setup !== null}
     />

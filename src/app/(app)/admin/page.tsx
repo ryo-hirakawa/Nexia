@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireMembership } from "@/lib/auth";
+import { requireMembership, hasRole } from "@/lib/auth";
 import { loadOverview } from "@/lib/overview-server";
 import { yen } from "@/lib/daily";
 import { pct } from "@/lib/finance";
@@ -9,8 +9,11 @@ import { StoreSalesBars } from "./overview-chart";
 
 export default async function AdminOverviewPage() {
   const membership = await requireMembership();
-  if (!membership.isPlatformAdmin) notFound();
+  const isCrossClient = membership.isPlatformAdmin;
+  if (!isCrossClient && !hasRole(membership, "owner")) notFound();
 
+  // isCrossClient=false（経営者）の場合、stores クエリは RLS により
+  // 自社の店舗しか返らないので、ここでクライアント絞り込みは不要。
   const o = await loadOverview();
 
   return (
@@ -18,7 +21,8 @@ export default async function AdminOverviewPage() {
       <div>
         <h1 className="text-xl font-bold tracking-tight">統括</h1>
         <p className="text-sm text-muted">
-          全クライアント横断 ・ {monthLabel(o.month + "-01")}（月初〜前日）
+          {isCrossClient ? "全クライアント横断" : "自社の全店舗"} ・{" "}
+          {monthLabel(o.month + "-01")}（月初〜前日）
         </p>
       </div>
 
@@ -100,7 +104,9 @@ export default async function AdminOverviewPage() {
                         >
                           {r.storeName}
                         </Link>
-                        <span className="ml-2 text-xs text-muted">{r.clientName}</span>
+                        {isCrossClient ? (
+                          <span className="ml-2 text-xs text-muted">{r.clientName}</span>
+                        ) : null}
                       </td>
                       <td className="px-3 py-2.5 text-right font-mono tabular-nums">{yen(r.sales)}</td>
                       <td className="px-3 py-2.5 text-right font-mono tabular-nums">

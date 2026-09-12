@@ -3,14 +3,18 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
- SALES_CATEGORIES,
- VARIABLE_COST_ITEMS,
+ VARIABLE_COST_ITEMS as BAR_VARIABLE_COST_ITEMS,
  PAYMENT_METHODS,
  WEATHER_OPTIONS,
- COGS_ITEMS,
- LABOR_ITEMS,
+ COGS_ITEMS as BAR_COGS_ITEMS,
+ LABOR_ITEMS as BAR_LABOR_ITEMS,
  type PaymentKey,
 } from "@/lib/bar-preset";
+import {
+ VARIABLE_COST_ITEMS as RESTAURANT_VARIABLE_COST_ITEMS,
+ COGS_ITEMS as RESTAURANT_COGS_ITEMS,
+ LABOR_ITEMS as RESTAURANT_LABOR_ITEMS,
+} from "@/lib/restaurant-preset";
 import { yen, type DailyRecordForm } from "@/lib/daily";
 import {
  saveDailyRecord,
@@ -32,28 +36,37 @@ export default function DailyForm({
  initial,
  storeName,
  storeId,
+ industry,
  prevDate,
  nextDate,
  fixedLines,
  staffLines,
  staffPerDay,
  variableItems,
+ salesCategories,
  setupMonth,
  setupExists,
 }: {
  initial: DailyRecordForm;
  storeName: string;
  storeId: string;
+ industry: string;
  prevDate: string;
  nextDate: string;
  fixedLines: { item: string; category: string; perDay: number }[];
  staffLines: { name: string; perDay: number }[];
  staffPerDay: number;
  variableItems: string[];
+ salesCategories: string[];
  setupMonth: string;
  setupExists: boolean;
 }) {
  const router = useRouter();
+ const isBar = industry === "bar";
+ const VARIABLE_COST_ITEMS = isBar ? BAR_VARIABLE_COST_ITEMS : RESTAURANT_VARIABLE_COST_ITEMS;
+ const COGS_ITEMS = isBar ? BAR_COGS_ITEMS : RESTAURANT_COGS_ITEMS;
+ const LABOR_ITEMS = isBar ? BAR_LABOR_ITEMS : RESTAURANT_LABOR_ITEMS;
+ const SALES_CATEGORIES = salesCategories;
  const varOptions = variableItems.length ? variableItems : [...VARIABLE_COST_ITEMS];
  const fixedPerDayTotal = fixedLines.reduce((s, l) => s + l.perDay, 0);
 
@@ -120,7 +133,7 @@ export default function DailyForm({
  const totalNum = num(totalSales);
  const catSum = useMemo(
  () => SALES_CATEGORIES.reduce((s, c) => s + num(cat[c]), 0),
- [cat],
+ [cat, SALES_CATEGORIES],
  );
  const varSum = useMemo(() => vars.reduce((s, r) => s + num(r.amount), 0), [vars]);
  const guestNum = num(guestCount);
@@ -353,9 +366,11 @@ export default function DailyForm({
  <Row label="電子マネー">
  <input inputMode="numeric" value={pay.emoney} onChange={(e) => setPay({ ...pay, emoney: e.target.value })} className={inputCls} />
  </Row>
+ {isBar ? (
  <Row label="売掛（＝下の「発生」合計から自動）" muted>
  <span className="font-mono text-sm tabular-nums text-muted">{yen(incurredSum)}</span>
  </Row>
+ ) : null}
  <Row label="決済合計" muted>
  <span className={"font-mono text-sm tabular-nums " + (payMismatch ? "text-bad" : "text-muted")}>
  {yen(paySum)} {paySum === 0 ? "" : payMismatch ? "✕ 総売上と不一致" : "✓ 総売上と一致"}
@@ -364,6 +379,7 @@ export default function DailyForm({
  </Section>
 
  {/* 売掛（ツケ） */}
+ {isBar ? (
  <Section title="売掛（ツケ）">
  <p className="mb-2 text-xs text-muted">前日までの残高：{yen(initial.priorReceivableBalance)}</p>
 
@@ -396,8 +412,10 @@ export default function DailyForm({
  </Row>
  </div>
  </Section>
+ ) : null}
 
  {/* キャスト別売上 */}
+ {isBar ? (
  <Section title="キャスト別売上">
  <div className="space-y-2">
  {casts.map((c, idx) => {
@@ -458,6 +476,7 @@ export default function DailyForm({
  </Row>
  </div>
  </Section>
+ ) : null}
 
  {/* 仕入れ・人件費 */}
  <Section title="仕入れ・人件費">
@@ -471,9 +490,11 @@ export default function DailyForm({
  <input inputMode="numeric" value={labor[i]} onChange={(e) => setLabor({ ...labor, [i]: e.target.value })} className={inputCls} />
  </Row>
  ))}
+ {isBar ? (
  <Row label="人件費 キャストバック（上のキャスト別から自動）" muted>
  <span className="font-mono text-sm tabular-nums text-muted">{yen(castBackSum)}</span>
  </Row>
+ ) : null}
  <Row label="人件費 月給スタッフ（日割り・月初セットアップから）" muted>
  <span className="font-mono text-sm tabular-nums text-muted">{yen(staffPerDay)} / 日</span>
  </Row>
@@ -596,7 +617,7 @@ export default function DailyForm({
  </button>
  </div>
  <p className="text-xs text-muted">
- 確定するには「総売上」と、入力済みの「売上内訳」「決済（現金＋カード＋電子＋売掛発生）」の合計が一致している必要があります。確定後も修正できます。
+ 確定するには「総売上」と、入力済みの「売上内訳」「決済（現金＋カード＋電子{isBar ? "＋売掛発生" : ""}）」の合計が一致している必要があります。確定後も修正できます。
  </p>
  </div>
  );
