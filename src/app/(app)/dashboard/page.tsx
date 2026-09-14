@@ -910,11 +910,7 @@ function Card({
       <div
         className={
           "px-4 py-2.5 text-sm font-semibold " +
-          (bar === "navy"
-            ? "bg-navy text-white"
-            : bar === "orange"
-              ? "bg-orange text-white"
-              : "border-b border-line text-navy")
+          (bar === "orange" ? "bg-orange text-white" : "bg-navy text-white")
         }
       >
         {title}
