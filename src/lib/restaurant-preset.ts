@@ -5,21 +5,17 @@
  * 決済手段・天候の選択肢は業態に依存しないため bar-preset.ts のものを共用する。
  */
 
-export const SALES_CATEGORIES = [
-  "料理",
-  "ドリンク",
-  "宴会コース",
-  "その他",
-] as const;
+export const SALES_CATEGORIES = ["フード", "ドリンク"] as const;
 
 export const VARIABLE_COST_ITEMS = [
   "消耗品",
+  "水道光熱費",
   "販促・広告",
   "衛生・清掃",
   "通信",
   "雑費",
 ] as const;
 
-/** 日次入力で使う仕入れ・人件費の固定項目 */
-export const COGS_ITEMS = ["食材・酒類", "その他"] as const;
+/** 日次入力で使う仕入れ・人件費の固定項目（売上カテゴリと対にする） */
+export const COGS_ITEMS = ["フード", "ドリンク"] as const;
 export const LABOR_ITEMS = ["スタッフ時給", "日払い"] as const;
