@@ -114,14 +114,23 @@ export function TrendBars({
           width={w}
           height={192}
           data={data}
-          margin={{ top: 16, right: 4, bottom: 0, left: 4 }}
+          margin={{ top: 16, right: 4, bottom: 0, left: 0 }}
         >
+          <CartesianGrid vertical={false} stroke={TRACK} strokeDasharray="3 3" />
           <XAxis
             dataKey="label"
             tick={{ fontSize: 10, fill: MUTED }}
             axisLine={{ stroke: TRACK }}
             tickLine={false}
             interval="preserveStartEnd"
+          />
+          <YAxis
+            domain={[0, "auto"]}
+            tickFormatter={(v) => manLabel(Number(v) || 0)}
+            tick={{ fontSize: 10, fill: MUTED }}
+            axisLine={false}
+            tickLine={false}
+            width={36}
           />
           <Tooltip
             cursor={{ fill: "var(--line)", opacity: 0.5 }}
@@ -234,13 +243,22 @@ export function CostCompareBars({
           width={w}
           height={224}
           data={data}
-          margin={{ top: 8, right: 8, bottom: 0, left: 8 }}
+          margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
         >
+          <CartesianGrid vertical={false} stroke={TRACK} strokeDasharray="3 3" />
           <XAxis
             dataKey="label"
             tick={{ fontSize: 10, fill: MUTED }}
             axisLine={{ stroke: TRACK }}
             tickLine={false}
+          />
+          <YAxis
+            domain={[0, "auto"]}
+            tickFormatter={(v) => manLabel(Number(v) || 0)}
+            tick={{ fontSize: 10, fill: MUTED }}
+            axisLine={false}
+            tickLine={false}
+            width={36}
           />
           <Legend
             verticalAlign="top"
@@ -292,13 +310,22 @@ export function WeekdayBars({
           width={w}
           height={192}
           data={data}
-          margin={{ top: 16, right: 8, bottom: 0, left: 8 }}
+          margin={{ top: 16, right: 8, bottom: 0, left: 0 }}
         >
+          <CartesianGrid vertical={false} stroke={TRACK} strokeDasharray="3 3" />
           <XAxis
             dataKey="label"
             tick={{ fontSize: 11, fill: MUTED }}
             axisLine={{ stroke: TRACK }}
             tickLine={false}
+          />
+          <YAxis
+            domain={[0, "auto"]}
+            tickFormatter={(v) => manLabel(Number(v) || 0)}
+            tick={{ fontSize: 10, fill: MUTED }}
+            axisLine={false}
+            tickLine={false}
+            width={36}
           />
           <Tooltip
             cursor={{ fill: "var(--line)", opacity: 0.5 }}
@@ -403,6 +430,16 @@ export function RankedBarList({
   const hasSub = subLabel && items.some((i) => (i.sub ?? 0) > 0);
   return (
     <div className="space-y-2">
+      {/* 目盛り（0 / 中間 / 最大）。バーの実トラック部分に位置を合わせる。 */}
+      <div className="flex items-center gap-2">
+        <span className="w-24 shrink-0 sm:w-32" />
+        <span className="relative flex-1 text-[9px] text-muted">
+          <span className="absolute left-0">¥0</span>
+          <span className="absolute left-1/2 -translate-x-1/2">{manLabel(max / 2)}</span>
+          <span className="absolute right-0">{manLabel(max)}</span>
+        </span>
+        <span className="w-20 shrink-0 sm:w-24" />
+      </div>
       {items.map((i) => (
         <div key={i.name} className="flex items-center gap-2">
           <span className="w-24 shrink-0 truncate text-xs text-muted sm:w-32" title={i.name}>
