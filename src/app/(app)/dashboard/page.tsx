@@ -412,7 +412,7 @@ export default async function DashboardPage({
           {view === "month" && !d.isMonthComplete ? (
             <div className="rounded-xl border border-line bg-surface p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-semibold">{forecastTitle}</p>
+                <p className="text-sm font-semibold text-navy">{forecastTitle}</p>
                 {forecastState === "ready" && missingDays > 0 ? (
                   <span className="rounded-full bg-warn/10 px-2.5 py-1 text-xs font-medium text-warn">
                     暫定予測・未入力{missingDays}日あり
@@ -610,7 +610,7 @@ export default async function DashboardPage({
               centerValue={costTotal}
             />
             <div className="mt-4 space-y-4 border-t border-line pt-4">
-              <h3 className="text-xs font-semibold text-foreground">経費の内訳（どこに使ったか）</h3>
+              <h3 className="text-xs font-semibold text-navy">経費の内訳（どこに使ったか）</h3>
               {d.cogsByItem.length ? (
                 <BreakdownBlock label="仕入れ（原価）" total={d.cogs}>
                   <RankedBarList items={d.cogsByItem} />
