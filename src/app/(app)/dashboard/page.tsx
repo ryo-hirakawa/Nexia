@@ -124,7 +124,7 @@ export default async function DashboardPage({
 
   const { data: storeRows } = await supabase
     .from("stores")
-    .select("id, name")
+    .select("id, name, industry")
     .order("created_at", { ascending: true });
   const stores = storeRows ?? [];
 
@@ -137,6 +137,7 @@ export default async function DashboardPage({
   }
 
   const store = stores.find((s) => s.id === sp.s) ?? stores[0];
+  const isBar = store.industry === "bar";
   const view: DashView =
     sp.view === "day" || sp.view === "week" || sp.view === "month" ? sp.view : "month";
   const refDate =
@@ -378,11 +379,13 @@ export default async function DashboardPage({
                   : undefined
               }
             />
-            <Kpi
-              k="売掛残高"
-              v={yen(d.receivableBalance)}
-              sub={`${fmtMDW(d.range.end)} 時点（期間の売上ではありません）`}
-            />
+            {isBar ? (
+              <Kpi
+                k="売掛残高"
+                v={yen(d.receivableBalance)}
+                sub={`${fmtMDW(d.range.end)} 時点（期間の売上ではありません）`}
+              />
+            ) : null}
           </div>
 
           {/* 月末着地予想：月表示・進行中（未終了）のときだけ、主要カード直下に
@@ -644,7 +647,8 @@ export default async function DashboardPage({
             ) : null}
             <div className="mt-3 space-y-1 border-t border-line pt-3 text-xs text-muted">
               <p>
-                固定費・月給スタッフは、休業日や未入力日があっても発生する費用として、対象期間の暦日数で按分（月が終了していれば設定額の全額）。人件費＝時給＋日払い＋キャストバック＋月給スタッフ。
+                固定費・月給スタッフは、休業日や未入力日があっても発生する費用として、対象期間の暦日数で按分（月が終了していれば設定額の全額）。
+                人件費＝時給＋日払い{isBar ? "＋キャストバック" : ""}＋月給スタッフ。
               </p>
               {view === "month" && !d.isMonthComplete ? (
                 <p>
@@ -665,7 +669,7 @@ export default async function DashboardPage({
             </div>
           </Card>
 
-          {/* ⑦ 詳細：決済構成・キャストランキング・曜日別平均 */}
+          {/* ⑦ 詳細：決済構成・(バーのみ)キャストランキング・曜日別平均 */}
           <div className="grid items-start gap-4 lg:grid-cols-2">
             <Card title="決済構成" bar="navy">
               {d.byPayment.length ? (
@@ -687,51 +691,39 @@ export default async function DashboardPage({
               )}
             </Card>
 
-            <Card title="キャスト別 売上ランキング" bar="orange">
-              {d.castRanking.length ? (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-xs text-muted">
-                      <th className="w-8 pb-1.5 text-left font-medium">#</th>
-                      <th className="pb-1.5 text-left font-medium">キャスト</th>
-                      <th className="pb-1.5 text-right font-medium">売上</th>
-                      <th className="pb-1.5 text-right font-medium">バック</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {d.castRanking.map((c, i) => (
-                      <tr key={c.name} className="border-b border-line last:border-0">
-                        <td className="py-1.5">{i === 0 ? "👑" : i + 1}</td>
-                        <td className="py-1.5 font-medium">{c.name}</td>
-                        <td className="py-1.5 text-right font-mono tabular-nums">{yen(c.sales)}</td>
-                        <td className="py-1.5 text-right font-mono tabular-nums text-muted">{yen(c.back)}</td>
+            {isBar ? (
+              <Card title="キャスト別 売上ランキング" bar="orange">
+                {d.castRanking.length ? (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs text-muted">
+                        <th className="w-8 pb-1.5 text-left font-medium">#</th>
+                        <th className="pb-1.5 text-left font-medium">キャスト</th>
+                        <th className="pb-1.5 text-right font-medium">売上</th>
+                        <th className="pb-1.5 text-right font-medium">バック</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <Empty />
-              )}
-            </Card>
+                    </thead>
+                    <tbody>
+                      {d.castRanking.map((c, i) => (
+                        <tr key={c.name} className="border-b border-line last:border-0">
+                          <td className="py-1.5">{i === 0 ? "👑" : i + 1}</td>
+                          <td className="py-1.5 font-medium">{c.name}</td>
+                          <td className="py-1.5 text-right font-mono tabular-nums">{yen(c.sales)}</td>
+                          <td className="py-1.5 text-right font-mono tabular-nums text-muted">{yen(c.back)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <Empty />
+                )}
+              </Card>
+            ) : (
+              <WeekdayCard weekday={weekday} refDate={refDate} />
+            )}
           </div>
 
-          <Card title="曜日別 平均売上（直近90日）">
-            {weekday.some((w) => w.days > 0) ? (
-              <>
-                <WeekdayBars data={weekday} />
-                <p className="mt-2 text-xs text-muted">
-                  オレンジ＝平均売上が最も高い曜日。シフトや仕入れの目安に。
-                </p>
-                <p className="mt-1 text-xs text-muted">
-                  対象期間: {fmtMDW(addDays(refDate, -90))} 〜 {fmtMDW(refDate)}
-                  {" ・ "}
-                  集計日数: {weekday.map((w) => `${w.label}${w.days}日`).join(" ")}
-                </p>
-              </>
-            ) : (
-              <Empty />
-            )}
-          </Card>
+          {isBar ? <WeekdayCard weekday={weekday} refDate={refDate} /> : null}
         </>
       )}
     </div>
@@ -915,6 +907,34 @@ function Card({
 
 function Empty() {
   return <p className="text-sm text-muted">データなし</p>;
+}
+
+function WeekdayCard({
+  weekday,
+  refDate,
+}: {
+  weekday: { label: string; avg: number; days: number }[];
+  refDate: string;
+}) {
+  return (
+    <Card title="曜日別 平均売上（直近90日）">
+      {weekday.some((w) => w.days > 0) ? (
+        <>
+          <WeekdayBars data={weekday} />
+          <p className="mt-2 text-xs text-muted">
+            オレンジ＝平均売上が最も高い曜日。シフトや仕入れの目安に。
+          </p>
+          <p className="mt-1 text-xs text-muted">
+            対象期間: {fmtMDW(addDays(refDate, -90))} 〜 {fmtMDW(refDate)}
+            {" ・ "}
+            集計日数: {weekday.map((w) => `${w.label}${w.days}日`).join(" ")}
+          </p>
+        </>
+      ) : (
+        <Empty />
+      )}
+    </Card>
+  );
 }
 
 /** 経費内訳の1ブロック（見出し＋合計＋常時表示の棒グラフ）。details に畳まず、
