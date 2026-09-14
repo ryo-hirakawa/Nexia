@@ -40,19 +40,14 @@ const NAVY = "var(--navy)";
 const ORANGE = "var(--orange)";
 const TRACK = "var(--line)";
 const MUTED = "var(--muted)";
-/** 識別用の分類色（CVD 分離を確認済みの8色、固定順で使う）。凡例・グラフの
- *  「これは何の項目か」を色だけに頼らず示すため、常に隣に金額・ラベルを表示する。 */
-const CATEGORICAL = [
-  "var(--chart-1)",
-  "var(--chart-2)",
-  "var(--chart-3)",
-  "var(--chart-4)",
-  "var(--chart-5)",
-  "var(--chart-6)",
-  "var(--chart-7)",
-  "var(--chart-8)",
+const PIE_COLORS = [
+  "var(--navy)",
+  "var(--orange)",
+  "#6f8bb0",
+  "#f0a35e",
+  "#9db2cc",
+  "#c9ced8",
 ];
-const PIE_COLORS = CATEGORICAL;
 
 const yen0 = (n: number) => "¥" + Math.round(n).toLocaleString("ja-JP");
 
@@ -445,41 +440,39 @@ export function RankedBarList({
         </span>
         <span className="w-20 shrink-0 sm:w-24" />
       </div>
-      {items.map((i, idx) => {
-        const color = CATEGORICAL[idx % CATEGORICAL.length];
-        return (
-          <div key={i.name} className="flex items-center gap-2">
-            <span className="w-24 shrink-0 truncate text-xs text-muted sm:w-32" title={i.name}>
-              {i.name}
-            </span>
+      {items.map((i) => (
+        <div key={i.name} className="flex items-center gap-2">
+          <span className="w-24 shrink-0 truncate text-xs text-muted sm:w-32" title={i.name}>
+            {i.name}
+          </span>
+          <span
+            className="relative h-4 flex-1 overflow-hidden rounded"
+            style={{ background: "var(--line)" }}
+          >
             <span
-              className="relative h-4 flex-1 overflow-hidden rounded"
-              style={{ background: "var(--line)" }}
-            >
+              className="absolute inset-y-0 left-0 rounded transition-[width]"
+              style={{ width: `${(i.amount / max) * 100}%`, background: NAVY }}
+            />
+            {i.sub ? (
               <span
                 className="absolute inset-y-0 left-0 rounded transition-[width]"
-                style={{ width: `${(i.amount / max) * 100}%`, background: color }}
+                style={{ width: `${(i.sub / max) * 100}%`, background: ORANGE }}
               />
-              {i.sub ? (
-                <span
-                  className="absolute inset-y-0 left-0 rounded transition-[width]"
-                  style={{ width: `${(i.sub / max) * 100}%`, background: "rgba(0,0,0,0.35)" }}
-                />
-              ) : null}
-            </span>
-            <span className="w-20 shrink-0 text-right font-mono text-xs tabular-nums sm:w-24">
-              {yen0(i.amount)}
-            </span>
-          </div>
-        );
-      })}
+            ) : null}
+          </span>
+          <span className="w-20 shrink-0 text-right font-mono text-xs tabular-nums sm:w-24">
+            {yen0(i.amount)}
+          </span>
+        </div>
+      ))}
       {hasSub ? (
         <p className="flex items-center gap-3 pt-0.5 text-[10px] text-muted">
           <span className="flex items-center gap-1">
-            <span
-              className="inline-block h-2 w-2 rounded-sm"
-              style={{ background: "rgba(0,0,0,0.35)" }}
-            />
+            <span className="inline-block h-2 w-2 rounded-sm" style={{ background: NAVY }} />
+            合計
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-sm" style={{ background: ORANGE }} />
             {subLabel}
           </span>
         </p>
