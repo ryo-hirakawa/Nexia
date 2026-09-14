@@ -386,6 +386,64 @@ export function MiniCompareBars({
   );
 }
 
+/**
+ * 経費の内訳を「常時見える」横棒リストで表示する（recharts 不使用の軽量
+ * HTML/CSS）。details に畳んで隠すと存在に気づかれないため、費目別経費
+ * カードの中で常に開いた状態で使う。`sub`（掛など）を渡すと、同じ棒の中に
+ * 濃い色で重ねて「全体のうちどれだけか」を示す。
+ */
+export function RankedBarList({
+  items,
+  subLabel,
+}: {
+  items: { name: string; amount: number; sub?: number }[];
+  subLabel?: string;
+}) {
+  const max = Math.max(1, ...items.map((i) => i.amount));
+  const hasSub = subLabel && items.some((i) => (i.sub ?? 0) > 0);
+  return (
+    <div className="space-y-2">
+      {items.map((i) => (
+        <div key={i.name} className="flex items-center gap-2">
+          <span className="w-24 shrink-0 truncate text-xs text-muted sm:w-32" title={i.name}>
+            {i.name}
+          </span>
+          <span
+            className="relative h-4 flex-1 overflow-hidden rounded"
+            style={{ background: "var(--line)" }}
+          >
+            <span
+              className="absolute inset-y-0 left-0 rounded transition-[width]"
+              style={{ width: `${(i.amount / max) * 100}%`, background: NAVY }}
+            />
+            {i.sub ? (
+              <span
+                className="absolute inset-y-0 left-0 rounded transition-[width]"
+                style={{ width: `${(i.sub / max) * 100}%`, background: ORANGE }}
+              />
+            ) : null}
+          </span>
+          <span className="w-20 shrink-0 text-right font-mono text-xs tabular-nums sm:w-24">
+            {yen0(i.amount)}
+          </span>
+        </div>
+      ))}
+      {hasSub ? (
+        <p className="flex items-center gap-3 pt-0.5 text-[10px] text-muted">
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-sm" style={{ background: NAVY }} />
+            合計
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-sm" style={{ background: ORANGE }} />
+            {subLabel}
+          </span>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 /** 月別売上：対象期間 vs 前年同期（直近12ヶ月・グループ棒）。月ビュー専用。
  *  「今年/昨年」は12ヶ月が年をまたぐと誤解を招くため使わない。
  *  データがない月は 0円の棒ではなく null にして、棒自体を描かない

@@ -28,6 +28,7 @@ import {
   WeekdayBars,
   MiniCompareBars,
   MonthlyYoYBars,
+  RankedBarList,
 } from "./charts";
 import { DashControls } from "./controls";
 import {
@@ -586,9 +587,40 @@ export default async function DashboardPage({
               centerLabel="経費計"
               centerValue={costTotal}
             />
-            <FoldableDetail title="人件費の内訳" items={d.laborByItem} />
-            <FoldableDetail title="流動費の内訳" items={d.variableByItem} />
-            <VendorDetail items={d.byCounterparty} creditTotal={d.creditPayable} />
+            <div className="mt-4 space-y-4 border-t border-line pt-4">
+              <h3 className="text-xs font-semibold text-foreground">経費の内訳（どこに使ったか）</h3>
+              {d.cogsByItem.length ? (
+                <BreakdownBlock label="仕入れ（原価）" total={d.cogs}>
+                  <RankedBarList items={d.cogsByItem} />
+                </BreakdownBlock>
+              ) : null}
+              {d.laborByItem.length ? (
+                <BreakdownBlock label="人件費" total={d.labor}>
+                  <RankedBarList items={d.laborByItem} />
+                </BreakdownBlock>
+              ) : null}
+              {d.variableByItem.length ? (
+                <BreakdownBlock label="流動費" total={d.variable}>
+                  <RankedBarList items={d.variableByItem} />
+                </BreakdownBlock>
+              ) : null}
+              {d.byCounterparty.length ? (
+                <BreakdownBlock
+                  label="取引先別（仕入れ・流動費）"
+                  total={d.byCounterparty.reduce((s, i) => s + i.amount, 0)}
+                  note={
+                    d.creditPayable > 0
+                      ? `内 掛（買掛）合計 ${yen(d.creditPayable)}（支払い済みかは別管理）`
+                      : undefined
+                  }
+                >
+                  <RankedBarList
+                    items={d.byCounterparty.map((v) => ({ name: v.name, amount: v.amount, sub: v.credit }))}
+                    subLabel="内 掛（買掛）"
+                  />
+                </BreakdownBlock>
+              ) : null}
+            </div>
             {hasPrev ? (
               <details className="mt-3 border-t border-line pt-3">
                 <summary className="cursor-pointer select-none text-xs text-muted">
@@ -885,71 +917,27 @@ function Empty() {
   return <p className="text-sm text-muted">データなし</p>;
 }
 
-/** 内訳の一覧。項目が多いと縦に伸びるので折りたたみ式にする（重要な警告や
- *  主要数値ではないため隠しても支障がない）。 */
-function VendorDetail({
-  items,
-  creditTotal,
+/** 経費内訳の1ブロック（見出し＋合計＋常時表示の棒グラフ）。details に畳まず、
+ *  「経費がどこに使われているか」が開かなくても分かるようにする。 */
+function BreakdownBlock({
+  label,
+  total,
+  note,
+  children,
 }: {
-  items: { name: string; amount: number; cash: number; credit: number }[];
-  creditTotal: number;
+  label: string;
+  total: number;
+  note?: string;
+  children: React.ReactNode;
 }) {
-  if (items.length === 0) return null;
   return (
-    <details className="mt-3 border-t border-line pt-2">
-      <summary className="cursor-pointer select-none text-xs text-muted">
-        取引先別（仕入れ・流動費）
-      </summary>
-      <table className="mt-1 w-full text-sm">
-        <thead>
-          <tr className="text-xs text-muted">
-            <th className="py-0.5 text-left font-normal">取引先</th>
-            <th className="py-0.5 text-right font-normal">金額</th>
-            <th className="py-0.5 text-right font-normal">内 掛</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((i) => (
-            <tr key={i.name}>
-              <td className="py-0.5 text-muted">{i.name}</td>
-              <td className="py-0.5 text-right font-mono tabular-nums">{yen(i.amount)}</td>
-              <td className="py-0.5 text-right font-mono tabular-nums text-muted">
-                {i.credit > 0 ? yen(i.credit) : "—"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {creditTotal > 0 ? (
-        <p className="mt-1 text-right text-xs text-muted">
-          期間中の掛（買掛）合計: {yen(creditTotal)}（支払い済みかは別管理）
-        </p>
-      ) : null}
-    </details>
-  );
-}
-
-function FoldableDetail({
-  title,
-  items,
-}: {
-  title: string;
-  items: { name: string; amount: number }[];
-}) {
-  if (items.length === 0) return null;
-  return (
-    <details className="mt-3 border-t border-line pt-2">
-      <summary className="cursor-pointer select-none text-xs text-muted">{title}</summary>
-      <table className="mt-1 w-full text-sm">
-        <tbody>
-          {items.map((i) => (
-            <tr key={i.name}>
-              <td className="py-0.5 text-muted">{i.name}</td>
-              <td className="py-0.5 text-right font-mono tabular-nums">{yen(i.amount)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </details>
+    <div>
+      <div className="mb-1.5 flex items-baseline justify-between">
+        <span className="text-xs font-medium text-muted">{label}</span>
+        <span className="font-mono text-xs tabular-nums text-muted">{yen(total)}</span>
+      </div>
+      {children}
+      {note ? <p className="mt-1 text-[10px] text-muted">{note}</p> : null}
+    </div>
   );
 }

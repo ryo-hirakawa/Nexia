@@ -70,6 +70,7 @@ export type DashboardData = {
   byPayment: { method: string; label: string; amount: number }[];
   castRanking: { name: string; sales: number; back: number }[];
   costByClass: { key: string; label: string; amount: number }[];
+  cogsByItem: { name: string; amount: number }[];
   variableByItem: { name: string; amount: number }[];
   laborByItem: { name: string; amount: number }[];
   byCounterparty: { name: string; amount: number; cash: number; credit: number }[];
@@ -277,6 +278,12 @@ export async function loadDashboardData(
     { key: "variable", label: "流動費", amount: variable },
   ].sort((a, b) => b.amount - a.amount);
 
+  const cogsByItem = groupSum(
+    costs.filter((c) => c.cost_class === "cogs"),
+    (r) => r.item,
+    (r) => r.amount,
+  ).sort((a, b) => b.amount - a.amount);
+
   const variableByItem = groupSum(
     costs.filter((c) => c.cost_class === "variable"),
     (r) => r.item,
@@ -360,6 +367,7 @@ export async function loadDashboardData(
     byPayment,
     castRanking,
     costByClass,
+    cogsByItem,
     variableByItem,
     laborByItem,
     byCounterparty,
