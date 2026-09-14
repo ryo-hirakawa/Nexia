@@ -413,7 +413,7 @@ export async function loadWeekdayAverages(
 
 export type MonthlyYoY = {
   monthKey: string; // "YYYY-MM"
-  label: string; // "9月"
+  label: string; // "'26/9"（年をまたぐため年を明記）
   curSales: number;
   prevSales: number;
   hasCur: boolean;
@@ -500,7 +500,9 @@ export async function loadMonthlyYoY(
 
     return {
       monthKey: k,
-      label: `${mm}月`,
+      // 月名だけだと年をまたぐ12ヶ月表示で「どの年の何月か」が分からず紛らわしい
+      // ため、年を明記する（例: '25/10）。
+      label: `'${String(yy).slice(2)}/${mm}`,
       curSales: cur.sum,
       prevSales: prev.sum,
       hasCur: cur.has,

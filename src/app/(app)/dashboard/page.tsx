@@ -174,6 +174,8 @@ export default async function DashboardPage({
     d.avgSpend !== null && previous.avgSpend !== null
       ? deltaPct(d.avgSpend, previous.avgSpend, false, deltaLabel)
       : { text: `${PREV_LABEL[view]}データなし`, tone: undefined, short: "データなし", direction: "flat" };
+  // 支出（原価+人件費+固定費+流動費の合計）は下がる方が良い指標なので invert=true。
+  const expenseDelta = deltaPct(costTotal, prevCostTotal, true, deltaLabel);
 
   const yearOverYear: Delta | null =
     view === "month"
@@ -330,6 +332,27 @@ export default async function DashboardPage({
               }
             />
             <Kpi
+              k="支出"
+              v={yen(costTotal)}
+              sub={`売上比 ${d.sales > 0 ? pct(costTotal / d.sales) : "—"}`}
+              delta={expenseDelta}
+              compare={
+                hasPrev
+                  ? {
+                      current: costTotal,
+                      previous: prevCostTotal,
+                      currentLabel: yen(costTotal),
+                      previousLabel: yen(prevCostTotal),
+                      curTag: CUR_LABEL[view],
+                      prevTag: PREV_LABEL[view],
+                    }
+                  : undefined
+              }
+              footnote={
+                <p className="text-xs text-muted">原価+人件費+固定費+流動費の合計（内訳は下部を参照）</p>
+              }
+            />
+            <Kpi
               k="営業利益"
               v={yen(d.operatingProfit)}
               sub={`利益率 ${pct(d.operatingMarginRate)}`}
@@ -379,32 +402,6 @@ export default async function DashboardPage({
                   : undefined
               }
             />
-            {isBar ? (
-              <Kpi
-                k="売掛残高"
-                v={yen(d.receivableBalance)}
-                sub={`${fmtMDW(d.range.end)} 時点（期間の売上ではありません）`}
-              />
-            ) : (
-              <Kpi
-                k="客単価"
-                v={d.avgSpend === null ? "—" : yen(d.avgSpend)}
-                sub={`客数 ${d.guests}人 ・ 組数 ${d.groups}組`}
-                delta={avgSpendDelta}
-                compare={
-                  hasPrev && d.avgSpend !== null && previous.avgSpend !== null
-                    ? {
-                        current: d.avgSpend,
-                        previous: previous.avgSpend,
-                        currentLabel: yen(d.avgSpend),
-                        previousLabel: yen(previous.avgSpend),
-                        curTag: CUR_LABEL[view],
-                        prevTag: PREV_LABEL[view],
-                      }
-                    : undefined
-                }
-              />
-            )}
           </div>
 
           {/* 月末着地予想：月表示・進行中（未終了）のときだけ、主要カード直下に
@@ -708,6 +705,11 @@ export default async function DashboardPage({
               ) : (
                 <Empty />
               )}
+              {isBar ? (
+                <p className="mt-3 border-t border-line pt-3 text-xs text-muted">
+                  売掛残高: {yen(d.receivableBalance)}（{fmtMDW(d.range.end)} 時点、期間の売上ではありません）
+                </p>
+              ) : null}
             </Card>
 
             {isBar ? (
