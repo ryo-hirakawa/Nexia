@@ -588,6 +588,7 @@ export default async function DashboardPage({
             />
             <FoldableDetail title="人件費の内訳" items={d.laborByItem} />
             <FoldableDetail title="流動費の内訳" items={d.variableByItem} />
+            <VendorDetail items={d.byCounterparty} creditTotal={d.creditPayable} />
             {hasPrev ? (
               <details className="mt-3 border-t border-line pt-3">
                 <summary className="cursor-pointer select-none text-xs text-muted">
@@ -886,6 +887,48 @@ function Empty() {
 
 /** 内訳の一覧。項目が多いと縦に伸びるので折りたたみ式にする（重要な警告や
  *  主要数値ではないため隠しても支障がない）。 */
+function VendorDetail({
+  items,
+  creditTotal,
+}: {
+  items: { name: string; amount: number; cash: number; credit: number }[];
+  creditTotal: number;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <details className="mt-3 border-t border-line pt-2">
+      <summary className="cursor-pointer select-none text-xs text-muted">
+        取引先別（仕入れ・流動費）
+      </summary>
+      <table className="mt-1 w-full text-sm">
+        <thead>
+          <tr className="text-xs text-muted">
+            <th className="py-0.5 text-left font-normal">取引先</th>
+            <th className="py-0.5 text-right font-normal">金額</th>
+            <th className="py-0.5 text-right font-normal">内 掛</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((i) => (
+            <tr key={i.name}>
+              <td className="py-0.5 text-muted">{i.name}</td>
+              <td className="py-0.5 text-right font-mono tabular-nums">{yen(i.amount)}</td>
+              <td className="py-0.5 text-right font-mono tabular-nums text-muted">
+                {i.credit > 0 ? yen(i.credit) : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {creditTotal > 0 ? (
+        <p className="mt-1 text-right text-xs text-muted">
+          期間中の掛（買掛）合計: {yen(creditTotal)}（支払い済みかは別管理）
+        </p>
+      ) : null}
+    </details>
+  );
+}
+
 function FoldableDetail({
   title,
   items,

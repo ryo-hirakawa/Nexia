@@ -28,9 +28,27 @@ const num = (s: string) => {
 };
 const str = (n: number) => (n ? String(n) : "");
 
-type VarRow = { item: string; amount: string; note: string };
+type VarRow = {
+ item: string;
+ amount: string;
+ note: string;
+ vendorSel: string;
+ vendorOther: string;
+ credit: boolean;
+};
+type CogsRow = {
+ category: string;
+ vendorSel: string;
+ vendorOther: string;
+ amount: string;
+ credit: boolean;
+};
 type RecvRow = { cp: string; amt: string };
 type CastRow = { name: string; nom: string; tbl: string; comp: string; back: string };
+
+const OTHER_VENDOR = "__other__";
+const vendorOf = (r: { vendorSel: string; vendorOther: string }) =>
+ r.vendorSel === OTHER_VENDOR ? r.vendorOther.trim() : r.vendorSel;
 
 export default function DailyForm({
  initial,
@@ -44,6 +62,7 @@ export default function DailyForm({
  staffPerDay,
  variableItems,
  salesCategories,
+ vendors,
  setupMonth,
  setupExists,
 }: {
@@ -58,6 +77,7 @@ export default function DailyForm({
  staffPerDay: number;
  variableItems: string[];
  salesCategories: string[];
+ vendors: string[];
  setupMonth: string;
  setupExists: boolean;
 }) {
@@ -92,8 +112,24 @@ export default function DailyForm({
  const costOf = (cls: string, item: string) =>
  str(initial.costs.find((c) => c.cost_class === cls && c.item === item)?.amount ?? 0);
 
+ const vendorOptions = vendors.length ? vendors : [];
+ const toVendorRow = (c: { counterparty?: string | null; paymentType?: "cash" | "credit" }) => {
+ const cp = c.counterparty ?? "";
+ const known = cp && vendorOptions.includes(cp);
+ return {
+ vendorSel: cp ? (known ? cp : OTHER_VENDOR) : "",
+ vendorOther: cp && !known ? cp : "",
+ credit: c.paymentType === "credit",
+ };
+ };
+
  const [cogs, setCogs] = useState<Record<string, string>>(() =>
  Object.fromEntries(COGS_ITEMS.map((i) => [i, costOf("cogs", i)])),
+ );
+ const [cogsDetail, setCogsDetail] = useState<CogsRow[]>(() =>
+ initial.costs
+ .filter((c) => c.cost_class === "cogs" && c.counterparty)
+ .map((c) => ({ category: c.item, amount: str(c.amount), ...toVendorRow(c) })),
  );
  const [labor, setLabor] = useState<Record<string, string>>(() =>
  Object.fromEntries(LABOR_ITEMS.map((i) => [i, costOf("labor", i)])),
@@ -101,8 +137,15 @@ export default function DailyForm({
  const [vars, setVars] = useState<VarRow[]>(() => {
  const rows = initial.costs
  .filter((c) => c.cost_class === "variable")
- .map((c) => ({ item: c.item, amount: str(c.amount), note: c.note ?? "" }));
- return rows.length ? rows : [{ item: varOptions[0], amount: "", note: "" }];
+ .map((c) => ({
+ item: c.item,
+ amount: str(c.amount),
+ note: c.note ?? "",
+ ...toVendorRow(c),
+ }));
+ return rows.length
+ ? rows
+ : [{ item: varOptions[0], amount: "", note: "", vendorSel: "", vendorOther: "", credit: false }];
  });
 
  const [recvIn, setRecvIn] = useState<RecvRow[]>(() =>
@@ -136,6 +179,8 @@ export default function DailyForm({
  [cat, SALES_CATEGORIES],
  );
  const varSum = useMemo(() => vars.reduce((s, r) => s + num(r.amount), 0), [vars]);
+ const cogsDetailSum = (category: string) =>
+ cogsDetail.filter((r) => r.category === category).reduce((s, r) => s + num(r.amount), 0);
  const guestNum = num(guestCount);
  const groupNum = num(groupCount);
 
@@ -166,8 +211,20 @@ export default function DailyForm({
 
  function buildPayload(confirm: boolean): SavePayload {
  const costs: SavePayload["costs"] = [];
+ if (cogsDetail.length) {
+ for (const r of cogsDetail)
+ if (num(r.amount))
+ costs.push({
+ cost_class: "cogs",
+ item: r.category,
+ amount: num(r.amount),
+ counterparty: vendorOf(r) || null,
+ paymentType: r.credit ? "credit" : "cash",
+ });
+ } else {
  for (const i of COGS_ITEMS)
  if (num(cogs[i])) costs.push({ cost_class: "cogs", item: i, amount: num(cogs[i]) });
+ }
  for (const i of LABOR_ITEMS)
  if (num(labor[i])) costs.push({ cost_class: "labor", item: i, amount: num(labor[i]) });
  for (const r of vars)
@@ -177,6 +234,8 @@ export default function DailyForm({
  item: r.item.trim(),
  amount: num(r.amount),
  note: r.note.trim() || null,
+ counterparty: vendorOf(r) || null,
+ paymentType: r.credit ? "credit" : "cash",
  });
 
  return {
@@ -482,9 +541,118 @@ export default function DailyForm({
  <Section title="仕入れ・人件費">
  {COGS_ITEMS.map((i) => (
  <Row key={i} label={`仕入 ${i}`}>
+ {cogsDetail.length ? (
+ <span className="font-mono text-sm tabular-nums text-muted">
+ {yen(cogsDetailSum(i))}（内訳から自動）
+ </span>
+ ) : (
  <input inputMode="numeric" value={cogs[i]} onChange={(e) => setCogs({ ...cogs, [i]: e.target.value })} className={inputCls} />
+ )}
  </Row>
  ))}
+ <details className="mt-1">
+ <summary className="cursor-pointer text-xs text-muted hover:text-foreground">
+ 取引先の内訳を記録する（任意）
+ </summary>
+ <div className="mt-2 space-y-2 border-t border-line pt-2">
+ {cogsDetail.map((r, idx) => (
+ <div key={idx} className="flex flex-wrap items-center gap-2">
+ <div className="flex overflow-hidden rounded-md border border-line">
+ {COGS_ITEMS.map((c) => (
+ <button
+ key={c}
+ type="button"
+ onClick={() => {
+ const v = [...cogsDetail];
+ v[idx] = { ...r, category: c };
+ setCogsDetail(v);
+ }}
+ className={
+ "px-2 py-1 text-xs " +
+ (r.category === c ? "bg-navy text-white" : "bg-surface text-muted")
+ }
+ >
+ {c}
+ </button>
+ ))}
+ </div>
+ <select
+ value={r.vendorSel}
+ onChange={(e) => {
+ const v = [...cogsDetail];
+ v[idx] = { ...r, vendorSel: e.target.value, vendorOther: e.target.value === OTHER_VENDOR ? r.vendorOther : "" };
+ setCogsDetail(v);
+ }}
+ className="rounded-md border border-line bg-surface px-2 py-1 text-sm dark:bg-surface"
+ >
+ <option value="">取引先（任意）</option>
+ {vendorOptions.map((v) => (
+ <option key={v} value={v}>{v}</option>
+ ))}
+ <option value={OTHER_VENDOR}>その他…</option>
+ </select>
+ {r.vendorSel === OTHER_VENDOR ? (
+ <input
+ placeholder="取引先名"
+ value={r.vendorOther}
+ onChange={(e) => {
+ const v = [...cogsDetail];
+ v[idx] = { ...r, vendorOther: e.target.value };
+ setCogsDetail(v);
+ }}
+ className={cpCls}
+ />
+ ) : null}
+ <input
+ inputMode="numeric"
+ placeholder="金額"
+ value={r.amount}
+ onChange={(e) => {
+ const v = [...cogsDetail];
+ v[idx] = { ...r, amount: e.target.value };
+ setCogsDetail(v);
+ }}
+ className={inputCls}
+ />
+ <label className="flex items-center gap-1 text-xs text-muted">
+ <input
+ type="checkbox"
+ checked={r.credit}
+ onChange={(e) => {
+ const v = [...cogsDetail];
+ v[idx] = { ...r, credit: e.target.checked };
+ setCogsDetail(v);
+ }}
+ />
+ 掛（買掛）
+ </label>
+ <button
+ type="button"
+ onClick={() => setCogsDetail(cogsDetail.filter((_, i) => i !== idx))}
+ className="text-sm text-muted hover:text-bad"
+ aria-label="この行を削除"
+ >
+ 削除
+ </button>
+ </div>
+ ))}
+ <button
+ type="button"
+ onClick={() =>
+ setCogsDetail([
+ ...cogsDetail,
+ { category: COGS_ITEMS[0], vendorSel: "", vendorOther: "", amount: "", credit: false },
+ ])
+ }
+ className="rounded-md border border-line px-3 py-1 text-sm"
+ >
+ ＋ 取引先の明細を追加
+ </button>
+ <p className="text-xs text-muted">
+ 内訳を1件でも追加すると、上の「仕入 {COGS_ITEMS.join("・")}」は内訳の合計から自動計算されます（直接入力欄は消えます）。
+ </p>
+ </div>
+ </details>
  {LABOR_ITEMS.map((i) => (
  <Row key={i} label={`人件費 ${i}`}>
  <input inputMode="numeric" value={labor[i]} onChange={(e) => setLabor({ ...labor, [i]: e.target.value })} className={inputCls} />
@@ -565,6 +733,45 @@ export default function DailyForm({
  }}
  className={inputCls}
  />
+ <select
+ value={r.vendorSel}
+ onChange={(e) => {
+ const v = [...vars];
+ v[idx] = { ...r, vendorSel: e.target.value, vendorOther: e.target.value === OTHER_VENDOR ? r.vendorOther : "" };
+ setVars(v);
+ }}
+ className="rounded-md border border-line bg-surface px-2 py-1 text-sm dark:bg-surface"
+ >
+ <option value="">取引先（任意）</option>
+ {vendorOptions.map((v) => (
+ <option key={v} value={v}>{v}</option>
+ ))}
+ <option value={OTHER_VENDOR}>その他…</option>
+ </select>
+ {r.vendorSel === OTHER_VENDOR ? (
+ <input
+ placeholder="取引先名"
+ value={r.vendorOther}
+ onChange={(e) => {
+ const v = [...vars];
+ v[idx] = { ...r, vendorOther: e.target.value };
+ setVars(v);
+ }}
+ className={cpCls}
+ />
+ ) : null}
+ <label className="flex items-center gap-1 text-xs text-muted">
+ <input
+ type="checkbox"
+ checked={r.credit}
+ onChange={(e) => {
+ const v = [...vars];
+ v[idx] = { ...r, credit: e.target.checked };
+ setVars(v);
+ }}
+ />
+ 掛
+ </label>
  <input
  placeholder="メモ（任意）"
  value={r.note}
@@ -588,7 +795,7 @@ export default function DailyForm({
  </div>
  <button
  type="button"
- onClick={() => setVars([...vars, { item: varOptions[0], amount: "", note: "" }])}
+ onClick={() => setVars([...vars, { item: varOptions[0], amount: "", note: "", vendorSel: "", vendorOther: "", credit: false }])}
  className="mt-2 rounded-md border border-line px-3 py-1 text-sm "
  >
  ＋ 明細を追加

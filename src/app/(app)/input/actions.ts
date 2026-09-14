@@ -30,6 +30,8 @@ export type SavePayload = {
     item: string;
     amount: number;
     note?: string | null;
+    counterparty?: string | null;
+    paymentType?: "cash" | "credit";
   }[];
   receivables: {
     direction: "incurred" | "collected";
@@ -151,6 +153,8 @@ export async function saveDailyRecord(p: SavePayload): Promise<Result> {
       item: c.item.trim(),
       amount: n0(c.amount),
       note: c.note?.trim() || null,
+      counterparty: c.counterparty?.trim() || null,
+      payment_type: c.paymentType ?? "cash",
       sort_order: i,
     }));
   if (castBackSum > 0) {
@@ -160,6 +164,8 @@ export async function saveDailyRecord(p: SavePayload): Promise<Result> {
       item: "キャストバック",
       amount: castBackSum,
       note: null,
+      counterparty: null,
+      payment_type: "cash",
       sort_order: costRows.length,
     });
   }

@@ -7,6 +7,7 @@ import {
   loadSetupDataForDate,
   loadVariableItems,
   loadSalesCategories,
+  loadVendors,
 } from "@/lib/monthly-server";
 import { daysInMonth } from "@/lib/finance";
 import { SALES_CATEGORIES as BAR_SALES_CATEGORIES } from "@/lib/bar-preset";
@@ -31,11 +32,12 @@ export default async function DailyInputPage({
     .maybeSingle();
   if (!store) notFound();
 
-  const [record, setup, variableItems, salesCategories] = await Promise.all([
+  const [record, setup, variableItems, salesCategories, vendors] = await Promise.all([
     loadDailyRecord(storeId, date),
     loadSetupDataForDate(storeId, date),
     loadVariableItems(storeId),
     loadSalesCategories(storeId),
+    loadVendors(storeId),
   ]);
 
   const presetCategories =
@@ -70,6 +72,7 @@ export default async function DailyInputPage({
       staffPerDay={staffPerDay}
       variableItems={variableItems}
       salesCategories={salesCategories.length ? salesCategories : [...presetCategories]}
+      vendors={vendors}
       setupMonth={monthKey}
       setupExists={setup !== null}
     />

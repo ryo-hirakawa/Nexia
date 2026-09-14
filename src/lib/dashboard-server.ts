@@ -72,6 +72,8 @@ export type DashboardData = {
   costByClass: { key: string; label: string; amount: number }[];
   variableByItem: { name: string; amount: number }[];
   laborByItem: { name: string; amount: number }[];
+  byCounterparty: { name: string; amount: number; cash: number; credit: number }[];
+  creditPayable: number;
   dailyTrend: { date: string; sales: number; hasRecord: boolean }[];
 
   /** 取得に失敗した項目（"0件"と区別するため。空配列なら全項目取得成功） */
@@ -144,7 +146,9 @@ export async function loadDashboardData(
       // 費目別経費（当該/比較の両方で使う）は常に取得
       supabase
         .from("daily_costs")
-        .select("cost_class, item, amount, daily_records!inner(store_id, business_date)")
+        .select(
+          "cost_class, item, amount, counterparty, payment_type, daily_records!inner(store_id, business_date)",
+        )
         .eq("daily_records.store_id", storeId)
         .gte("daily_records.business_date", range.start)
         .lte("daily_records.business_date", range.end),
@@ -187,6 +191,8 @@ export async function loadDashboardData(
     cost_class: r.cost_class,
     item: r.item,
     amount: Number(r.amount),
+    counterparty: r.counterparty as string | null,
+    payment_type: r.payment_type as "cash" | "credit",
   }));
   const categories = (breakdown.categories ?? []).map((r) => ({
     category: r.category,
@@ -286,6 +292,26 @@ export async function loadDashboardData(
     laborByItem.push({ name: "月給スタッフ（日割り）", amount: laborStaffProrated });
   laborByItem.sort((a, b) => b.amount - a.amount);
 
+  // 取引先別（仕入れ・流動費のみ。人件費・固定費には取引先の概念が無い）
+  const counterpartyCosts = costs.filter(
+    (c) => (c.cost_class === "cogs" || c.cost_class === "variable") && c.counterparty,
+  );
+  const counterpartyMap = new Map<string, { amount: number; cash: number; credit: number }>();
+  for (const c of counterpartyCosts) {
+    const key = c.counterparty as string;
+    const cur = counterpartyMap.get(key) ?? { amount: 0, cash: 0, credit: 0 };
+    cur.amount += c.amount;
+    if (c.payment_type === "credit") cur.credit += c.amount;
+    else cur.cash += c.amount;
+    counterpartyMap.set(key, cur);
+  }
+  const byCounterparty = [...counterpartyMap.entries()]
+    .map(([name, v]) => ({ name, ...v }))
+    .sort((a, b) => b.amount - a.amount);
+  const creditPayable = counterpartyCosts
+    .filter((c) => c.payment_type === "credit")
+    .reduce((s, c) => s + c.amount, 0);
+
   const byDate = new Map(records.map((r) => [r.business_date, Number(r.total_sales)]));
   const dailyTrend =
     view === "day"
@@ -336,6 +362,8 @@ export async function loadDashboardData(
     costByClass,
     variableByItem,
     laborByItem,
+    byCounterparty,
+    creditPayable,
     dailyTrend,
     fetchErrors,
   };

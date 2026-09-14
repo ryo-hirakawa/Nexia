@@ -63,6 +63,11 @@ const STORES = [
       { item: "開業時借入返済", category: "借入返済", amount: 60000 },
     ],
     staff: [{ name: "店長", amount: 320000 }],
+    // 実際の日報Excelに出てきた取引先(頻出のもの)
+    vendors: ["カクヤス", "コストコ", "ローソン", "日本リース", "amazon", "西原商会", "若水西キ商店", "イトウ洋酒店"],
+    foodVendors: ["西原商会", "若水西キ商店", "コストコ"],
+    drinkVendors: ["カクヤス", "イトウ洋酒店"],
+    variableVendors: ["ローソン", "amazon", "日本リース"],
   },
   {
     name: "なべやこの",
@@ -82,6 +87,10 @@ const STORES = [
       { item: "Airレジ・電話・ネット", category: "通信・サブスク", amount: 16000 },
     ],
     staff: [{ name: "店長", amount: 300000 }],
+    vendors: ["コストコ", "業務スーパー", "ローソン", "日本リース", "マックスバリュー", "DUSKIN", "牛尾酒店", "西原商会"],
+    foodVendors: ["西原商会", "業務スーパー", "マックスバリュー"],
+    drinkVendors: ["牛尾酒店", "コストコ"],
+    variableVendors: ["ローソン", "DUSKIN", "日本リース"],
   },
   {
     name: "たみじや",
@@ -102,6 +111,11 @@ const STORES = [
       { item: "Airレジ・電話・ネット", category: "通信・サブスク", amount: 15000 },
     ],
     staff: [{ name: "店長", amount: 280000 }],
+    // 参考Excel無し。姉妹店と重なる一般的な取引先で仮置き(要ヒアリング差し替え)
+    vendors: ["コストコ", "業務スーパー", "ローソン", "日本リース", "カクヤス", "西原商会"],
+    foodVendors: ["西原商会", "業務スーパー"],
+    drinkVendors: ["カクヤス", "コストコ"],
+    variableVendors: ["ローソン", "日本リース"],
   },
 ];
 
@@ -132,12 +146,18 @@ for (const s of STORES) {
     SALES_CATEGORIES.map((name, i) => ({ store_id: storeId, name, sort_order: i })),
   );
 
+  // ---- 取引先マスタ ----
+  await admin.from("vendors").delete().eq("store_id", storeId);
+  await admin.from("vendors").insert(
+    s.vendors.map((name, i) => ({ store_id: storeId, name, sort_order: i })),
+  );
+
   // ---- 流動費費目を最新版に置き換え ----
   await admin.from("variable_cost_items").delete().eq("store_id", storeId);
   await admin.from("variable_cost_items").insert(
     VARIABLE_ITEMS.map((name, i) => ({ store_id: storeId, name, sort_order: i })),
   );
-  console.log("  カテゴリ/費目マスタ更新");
+  console.log("  カテゴリ/費目/取引先マスタ更新（取引先", s.vendors.length, "件）");
 
   // ---- 8月・9月の月初セットアップ + 月間目標 ----
   for (const [year, month] of [
@@ -211,6 +231,11 @@ for (const s of STORES) {
     const drinkCogs = Math.round(drinkSales * s.drinkCostRatio * noise(0.2));
     const laborAmt = Math.round(jitter(s.laborDaily, 0.25));
 
+    // 取引先・現金/掛は毎日ではなくローテーションで付ける(現場の実感=時々まとめて仕入れる)
+    const payType = () => (rand() < 0.22 ? "credit" : "cash");
+    const foodVendor = i % 3 !== 2 ? s.foodVendors[i % s.foodVendors.length] : null;
+    const drinkVendor = i % 4 !== 3 ? s.drinkVendors[i % s.drinkVendors.length] : null;
+
     // 流動費: 消耗品はほぼ毎日、他の費目は数日に1回のペース(経費の多様さを見せる)
     const variableCosts = [];
     variableCosts.push({
@@ -218,6 +243,8 @@ for (const s of STORES) {
       item: "消耗品",
       amount: Math.round(jitter(3500, 0.4)),
       sort_order: 0,
+      counterparty: s.variableVendors[i % s.variableVendors.length],
+      payment_type: payType(),
     });
     const cyclerItem = VARIABLE_ITEMS[1 + (i % (VARIABLE_ITEMS.length - 1))];
     if (i % 2 === 0) {
@@ -226,6 +253,8 @@ for (const s of STORES) {
         item: cyclerItem,
         amount: Math.round(jitter(2500, 0.5)),
         sort_order: 1,
+        counterparty: s.variableVendors[(i + 1) % s.variableVendors.length],
+        payment_type: payType(),
       });
     }
 
@@ -251,22 +280,51 @@ for (const s of STORES) {
     await admin.from("daily_payments").delete().eq("daily_record_id", recordId);
     await admin.from("daily_costs").delete().eq("daily_record_id", recordId);
 
-    await admin.from("daily_sales_categories").insert([
+    const { error: catErr } = await admin.from("daily_sales_categories").insert([
       { daily_record_id: recordId, category: "フード", amount: foodSales, sort_order: 0 },
       { daily_record_id: recordId, category: "ドリンク", amount: drinkSales, sort_order: 1 },
     ]);
-    await admin.from("daily_payments").insert([
+    if (catErr) throw catErr;
+
+    const { error: payErr } = await admin.from("daily_payments").insert([
       { daily_record_id: recordId, method: "cash", amount: cashAmt },
       { daily_record_id: recordId, method: "card", amount: cardAmt },
       { daily_record_id: recordId, method: "emoney", amount: 0 },
       { daily_record_id: recordId, method: "receivable", amount: 0 },
     ]);
-    await admin.from("daily_costs").insert([
-      { daily_record_id: recordId, cost_class: "cogs", item: "フード", amount: foodCogs, sort_order: 0 },
-      { daily_record_id: recordId, cost_class: "cogs", item: "ドリンク", amount: drinkCogs, sort_order: 1 },
-      { daily_record_id: recordId, cost_class: "labor", item: "日払い", amount: laborAmt, sort_order: 0 },
-      ...variableCosts,
+    if (payErr) throw payErr;
+
+    const { error: costErr } = await admin.from("daily_costs").insert([
+      {
+        daily_record_id: recordId,
+        cost_class: "cogs",
+        item: "フード",
+        amount: foodCogs,
+        sort_order: 0,
+        counterparty: foodVendor,
+        payment_type: foodVendor ? payType() : "cash",
+      },
+      {
+        daily_record_id: recordId,
+        cost_class: "cogs",
+        item: "ドリンク",
+        amount: drinkCogs,
+        sort_order: 1,
+        counterparty: drinkVendor,
+        payment_type: drinkVendor ? payType() : "cash",
+      },
+      {
+        daily_record_id: recordId,
+        cost_class: "labor",
+        item: "日払い",
+        amount: laborAmt,
+        sort_order: 0,
+        counterparty: null,
+        payment_type: "cash",
+      },
+      ...variableCosts.map((v) => ({ ...v, daily_record_id: recordId })),
     ]);
+    if (costErr) throw costErr;
   }
   console.log("  日次実績投入:", days.length, "日分(8月・9月)");
 }

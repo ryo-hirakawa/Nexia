@@ -4,11 +4,14 @@ export type RecordStatus = "draft" | "confirmed";
 export type CostClass = "cogs" | "labor" | "fixed" | "variable";
 
 export type CategoryLine = { category: string; amount: number };
+export type CostPaymentType = "cash" | "credit";
 export type CostLine = {
   cost_class: CostClass;
   item: string;
   amount: number;
   note?: string | null;
+  counterparty?: string | null;
+  paymentType?: CostPaymentType;
 };
 
 export type ReceivableDirection = "incurred" | "collected";

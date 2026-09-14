@@ -171,14 +171,14 @@ async function ensureStoreMember(storeId, profileId) {
   console.log("  store_members 追加");
 }
 
-const ownerEmail = "ryo.19880728+koreyakono-shacho@gmail.com";
+const ownerEmail = "koreyakono-shacho@example.com";
 const ownerUser = await findOrCreateUser(ownerEmail, "社長（これやこのグループ）");
 await ensureClientRole(ownerUser.id, "owner");
 
 const MANAGER_ALIASES = ["koreyakono-ten", "nabeyakono-ten", "tamijiya-ten"];
 for (let i = 0; i < storeRows.length; i++) {
   const store = storeRows[i];
-  const email = `ryo.19880728+${MANAGER_ALIASES[i]}@gmail.com`;
+  const email = `${MANAGER_ALIASES[i]}@example.com`;
   const user = await findOrCreateUser(email, `${store.name} 店長`);
   await ensureClientRole(user.id, "manager");
   await ensureStoreMember(store.id, user.id);
@@ -188,6 +188,6 @@ console.log("\n=== ログイン情報（仮） ===");
 console.log(`共通パスワード: ${TEMP_PASSWORD}`);
 console.log(`社長（3店舗ロールアップ）: ${ownerEmail}`);
 storeRows.forEach((s, i) => {
-  console.log(`${s.name} 店長: ryo.19880728+${MANAGER_ALIASES[i]}@gmail.com`);
+  console.log(`${s.name} 店長: ${MANAGER_ALIASES[i]}@example.com`);
 });
 console.log("\ndone");

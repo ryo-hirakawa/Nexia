@@ -135,3 +135,28 @@ export async function saveSalesCategories(
   revalidatePath("/input");
   return { ok: true };
 }
+
+export async function saveVendors(
+  storeId: string,
+  names: string[],
+): Promise<Result> {
+  await requireMembership();
+  const supabase = await createClient();
+
+  const clean = [
+    ...new Set(names.map((s) => s.trim()).filter((s) => s !== "")),
+  ].slice(0, 60);
+
+  await supabase.from("vendors").delete().eq("store_id", storeId);
+
+  if (clean.length) {
+    const { error } = await supabase.from("vendors").insert(
+      clean.map((name, i) => ({ store_id: storeId, name, sort_order: i })),
+    );
+    if (error) return { ok: false, error: error.message };
+  }
+
+  revalidatePath(`/setup/${storeId}`);
+  revalidatePath("/input");
+  return { ok: true };
+}

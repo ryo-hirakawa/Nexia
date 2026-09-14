@@ -9,6 +9,7 @@ import {
  saveMonthlySetup,
  saveVariableItems,
  saveSalesCategories,
+ saveVendors,
 } from "@/app/(app)/setup/actions";
 
 const num = (s: string) => {
@@ -26,6 +27,7 @@ export default function MonthlySetup({
  prev,
  variableItems,
  salesCategories,
+ vendors,
  nextMonth,
  prevMonth,
 }: {
@@ -34,6 +36,7 @@ export default function MonthlySetup({
  prev: MonthlySetupForm;
  variableItems: string[];
  salesCategories: string[];
+ vendors: string[];
  prevMonthKey: string;
  nextMonth: string;
  prevMonth: string;
@@ -59,6 +62,8 @@ export default function MonthlySetup({
  const [newItem, setNewItem] = useState("");
  const [cats, setCats] = useState<string[]>(salesCategories);
  const [newCat, setNewCat] = useState("");
+ const [vendorList, setVendorList] = useState<string[]>(vendors);
+ const [newVendor, setNewVendor] = useState("");
  const [salesTarget, setSalesTarget] = useState(str(initial.salesTarget));
 
  const [error, setError] = useState<string | null>(null);
@@ -122,6 +127,11 @@ export default function MonthlySetup({
  const r3 = await saveSalesCategories(initial.storeId, cats);
  if (!r3.ok) {
  setError(r3.error);
+ return;
+ }
+ const r4 = await saveVendors(initial.storeId, vendorList);
+ if (!r4.ok) {
+ setError(r4.error);
  return;
  }
  setSavedMsg("保存しました");
@@ -449,6 +459,59 @@ export default function MonthlySetup({
  const v = newItem.trim();
  if (v && !vitems.includes(v)) setVitems([...vitems, v]);
  setNewItem("");
+ }}
+ className="rounded-md border border-line px-3 py-1 text-sm "
+ >
+ ＋ 追加
+ </button>
+ </div>
+ </section>
+
+ {/* 取引先マスタ */}
+ <section className="rounded-xl border border-line bg-surface p-4 dark:bg-surface">
+ <h2 className="mb-1 text-sm font-semibold">取引先マスタ</h2>
+ <p className="mb-3 text-xs text-muted">
+ 日次入力の「仕入れ」「流動費」で、金額の内訳を取引先ごとに記録したいときの選択肢。登録しておけば毎回入力せず選ぶだけで済みます（内訳の記録自体は任意です）。
+ </p>
+ <div className="flex flex-wrap gap-2">
+ {vendorList.map((v) => (
+ <span
+ key={v}
+ className="inline-flex items-center gap-1 rounded-full border border-line px-3 py-1 text-sm "
+ >
+ {v}
+ <button
+ type="button"
+ onClick={() => setVendorList(vendorList.filter((x) => x !== v))}
+ className="text-muted hover:text-bad"
+ aria-label={`${v} を削除`}
+ >
+ ×
+ </button>
+ </span>
+ ))}
+ </div>
+ <div className="mt-3 flex gap-2">
+ <input
+ placeholder="取引先を追加（例：カクヤス）"
+ value={newVendor}
+ onChange={(e) => setNewVendor(e.target.value)}
+ onKeyDown={(e) => {
+ if (e.key === "Enter") {
+ e.preventDefault();
+ const v = newVendor.trim();
+ if (v && !vendorList.includes(v)) setVendorList([...vendorList, v]);
+ setNewVendor("");
+ }
+ }}
+ className={inputCls + " w-56"}
+ />
+ <button
+ type="button"
+ onClick={() => {
+ const v = newVendor.trim();
+ if (v && !vendorList.includes(v)) setVendorList([...vendorList, v]);
+ setNewVendor("");
  }}
  className="rounded-md border border-line px-3 py-1 text-sm "
  >
