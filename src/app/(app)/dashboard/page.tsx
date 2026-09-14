@@ -232,7 +232,7 @@ export default async function DashboardPage({
       {/* ① ヘッダー：店舗・対象期間・切り替え・入力状況を1つにまとめる */}
       <div className="rounded-xl border border-line bg-surface p-4">
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold tracking-tight">{store.name}</h1>
+          <h1 className="truncate text-lg font-bold tracking-tight text-navy">{store.name}</h1>
           <p className="text-sm text-muted">{periodLabel(view, refDate)}</p>
         </div>
 
@@ -914,7 +914,7 @@ function Card({
             ? "bg-navy text-white"
             : bar === "orange"
               ? "bg-orange text-white"
-              : "border-b border-line")
+              : "border-b border-line text-navy")
         }
       >
         {title}
