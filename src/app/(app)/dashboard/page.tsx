@@ -385,7 +385,26 @@ export default async function DashboardPage({
                 v={yen(d.receivableBalance)}
                 sub={`${fmtMDW(d.range.end)} 時点（期間の売上ではありません）`}
               />
-            ) : null}
+            ) : (
+              <Kpi
+                k="客単価"
+                v={d.avgSpend === null ? "—" : yen(d.avgSpend)}
+                sub={`客数 ${d.guests}人 ・ 組数 ${d.groups}組`}
+                delta={avgSpendDelta}
+                compare={
+                  hasPrev && d.avgSpend !== null && previous.avgSpend !== null
+                    ? {
+                        current: d.avgSpend,
+                        previous: previous.avgSpend,
+                        currentLabel: yen(d.avgSpend),
+                        previousLabel: yen(previous.avgSpend),
+                        curTag: CUR_LABEL[view],
+                        prevTag: PREV_LABEL[view],
+                      }
+                    : undefined
+                }
+              />
+            )}
           </div>
 
           {/* 月末着地予想：月表示・進行中（未終了）のときだけ、主要カード直下に
