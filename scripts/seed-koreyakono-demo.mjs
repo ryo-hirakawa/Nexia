@@ -1,17 +1,22 @@
 /**
- * これやこの・なべやこの・たみじや のヒアリング用デモデータを投入する。
+ * これやこの・なべやこの・たみじや のヒアリング用デモデータを投入する(過去2年分)。
  *
  *   node --env-file=.env.local scripts/seed-koreyakono-demo.mjs
  *
  * これやこの・なべやこのは、実際にもらった日報Excel(2026-08-28 / 2026-08-26)から
- * 抽出した比率(カテゴリ配分・決済配分・原価率)と、Excel内の予算欄(月間目標)を
- * そのまま使い、8月・9月の日々の実績を作る(絶対額は目標を軸にした揺らぎ生成で、
- * 実データの「その日のコピー」ではない)。たみじやは参考データが無いため、
- * 姉妹2店の規模感に合わせた仮の数値(要ヒアリング差し替え)。
+ * 抽出した比率(カテゴリ配分・決済配分・原価率)と、Excel内の予算欄(月間目標)を軸に、
+ * 2024-09-01 〜 2026-09-13(約2年・前年同月比が機能する期間)の日々の実績を作る
+ * (絶対額は目標を軸にした揺らぎ生成で、実データの「その日のコピー」ではない)。
+ * 2年前から現在にかけて緩やかな成長カーブ(0.75→1.00)をかけている。
+ * たみじやは参考データが無いため、姉妹2店の規模感に合わせた仮の数値(要ヒアリング差し替え)。
  * 経費まわりは「どこまで細かく設定できるか」を見せる目的で、固定費・流動費・
  * 月給スタッフ・日払いの全項目を使う。
+ *
+ * 日数が多い(約750日×3店舗)ため、日次レコードのIDをクライアント側で発行して
+ * 子テーブルをまとめて bulk insert する(1日ずつ往復しない)。
  */
 import { createClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -43,18 +48,38 @@ function daysInMonth(y, m) {
   return new Date(y, m, 0).getDate();
 }
 
+// ---- 期間: 2024-09-01 〜 2026-09-13 ----
+const START = { y: 2024, m: 9 };
+const END_MONTH_KEYS = []; // "YYYY-MM" 月初セットアップ対象の月一覧
+{
+  let y = START.y, m = START.m;
+  while (y < 2026 || (y === 2026 && m <= 9)) {
+    END_MONTH_KEYS.push(`${y}-${String(m).padStart(2, "0")}`);
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+}
+const TOTAL_MONTHS = END_MONTH_KEYS.length; // 25ヶ月
+
+/** 2年前(係数0.75)→今月(係数1.00)の緩やかな成長カーブ */
+function growthFactor(monthKey) {
+  const idx = END_MONTH_KEYS.indexOf(monthKey);
+  const t = idx / (TOTAL_MONTHS - 1);
+  return 0.75 + 0.25 * t;
+}
+
 const STORES = [
   {
     name: "これやこの",
-    dailyTarget: 4000000 / 30, // 月間目標を実日数で日割りした平均値を軸にする
+    dailyTarget: 4000000 / 30,
     monthlyTarget: 4000000,
-    foodRatio: 0.784, // 8/28実績: フード273,290 / 総売上348,690
-    cashRatio: 0.408, // 8/28実績: 現金142,250 / 総売上348,690
-    foodCostRatio: 0.291, // Excelの累計原価率(フード)
-    drinkCostRatio: 0.187, // Excelの累計原価率(ドリンク)
+    foodRatio: 0.784,
+    cashRatio: 0.408,
+    foodCostRatio: 0.291,
+    drinkCostRatio: 0.187,
     guestPerSales: 30 / 348690,
     groupPerSales: 13 / 348690,
-    laborDaily: 24000, // 日払い中心(8/28実績4,500円は谷日。月平均目安として24,000円/日で生成)
+    laborDaily: 24000,
     fixed: [
       { item: "店舗家賃", category: "地代家賃", amount: 300000 },
       { item: "厨房機器リース", category: "リース料", amount: 45000 },
@@ -63,9 +88,6 @@ const STORES = [
       { item: "開業時借入返済", category: "借入返済", amount: 60000 },
     ],
     staff: [{ name: "店長", amount: 320000 }],
-    // 実際の日報Excelに出てきた取引先(頻出のもの)。
-    // 「若水西キ商店」は元Excelの表記ゆれ(誤入力とみられる)。西原商会と同一の
-    // 取引先とみて統合(要ヒアリング確認)。
     vendors: ["カクヤス", "コストコ", "ローソン", "日本リース", "amazon", "西原商会", "イトウ洋酒店"],
     foodVendors: ["西原商会", "コストコ"],
     drinkVendors: ["カクヤス", "イトウ洋酒店"],
@@ -75,8 +97,8 @@ const STORES = [
     name: "なべやこの",
     dailyTarget: 3750000 / 30,
     monthlyTarget: 3750000,
-    foodRatio: 0.674, // 8/26実績: フード75,680 / 総売上112,320
-    cashRatio: 0.252, // 8/26実績: 現金28,290 / 総売上112,320
+    foodRatio: 0.674,
+    cashRatio: 0.252,
     foodCostRatio: 0.253,
     drinkCostRatio: 0.232,
     guestPerSales: 24 / 112320,
@@ -96,7 +118,6 @@ const STORES = [
   },
   {
     name: "たみじや",
-    // 参考Excel無し。姉妹2店の規模感に合わせた仮の数値(要ヒアリング差し替え)。
     dailyTarget: 3000000 / 30,
     monthlyTarget: 3000000,
     foodRatio: 0.7,
@@ -113,7 +134,6 @@ const STORES = [
       { item: "Airレジ・電話・ネット", category: "通信・サブスク", amount: 15000 },
     ],
     staff: [{ name: "店長", amount: 280000 }],
-    // 参考Excel無し。姉妹店と重なる一般的な取引先で仮置き(要ヒアリング差し替え)
     vendors: ["コストコ", "業務スーパー", "ローソン", "日本リース", "カクヤス", "西原商会"],
     foodVendors: ["西原商会", "業務スーパー"],
     drinkVendors: ["カクヤス", "コストコ"],
@@ -124,13 +144,18 @@ const STORES = [
 const SALES_CATEGORIES = ["フード", "ドリンク"];
 const VARIABLE_ITEMS = ["消耗品", "水道光熱費", "販促・広告", "衛生・清掃", "通信", "雑費"];
 
+async function insertChunked(table, rows, chunkSize = 500) {
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    const { error } = await admin.from(table).insert(chunk);
+    if (error) throw error;
+  }
+}
+
 const { data: storeRows, error: storeErr } = await admin
   .from("stores")
   .select("id, name")
-  .in(
-    "name",
-    STORES.map((s) => s.name),
-  );
+  .in("name", STORES.map((s) => s.name));
 if (storeErr) throw storeErr;
 const storeIdByName = Object.fromEntries(storeRows.map((s) => [s.name, s.id]));
 
@@ -142,31 +167,26 @@ for (const s of STORES) {
   }
   console.log("===", s.name, storeId);
 
-  // ---- 売上カテゴリをフード/ドリンクに置き換え ----
   await admin.from("sales_categories").delete().eq("store_id", storeId);
   await admin.from("sales_categories").insert(
     SALES_CATEGORIES.map((name, i) => ({ store_id: storeId, name, sort_order: i })),
   );
 
-  // ---- 取引先マスタ ----
   await admin.from("vendors").delete().eq("store_id", storeId);
   await admin.from("vendors").insert(
     s.vendors.map((name, i) => ({ store_id: storeId, name, sort_order: i })),
   );
 
-  // ---- 流動費費目を最新版に置き換え ----
   await admin.from("variable_cost_items").delete().eq("store_id", storeId);
   await admin.from("variable_cost_items").insert(
     VARIABLE_ITEMS.map((name, i) => ({ store_id: storeId, name, sort_order: i })),
   );
   console.log("  カテゴリ/費目/取引先マスタ更新（取引先", s.vendors.length, "件）");
 
-  // ---- 8月・9月の月初セットアップ + 月間目標 ----
-  for (const [year, month] of [
-    [2026, 8],
-    [2026, 9],
-  ]) {
-    const yearMonth = isoDate(year, month, 1);
+  // ---- 月初セットアップ + 月間目標: 2024-09 〜 2026-09(25ヶ月) ----
+  for (const monthKey of END_MONTH_KEYS) {
+    const yearMonth = `${monthKey}-01`;
+    const g = growthFactor(monthKey);
     const { data: ms, error: msErr } = await admin
       .from("monthly_setups")
       .upsert({ store_id: storeId, year_month: yearMonth }, { onConflict: "store_id,year_month" })
@@ -180,7 +200,7 @@ for (const s of STORES) {
         monthly_setup_id: ms.id,
         item: f.item,
         category: f.category,
-        amount_monthly: f.amount,
+        amount_monthly: Math.round(f.amount * (f.category === "借入返済" ? 1 : g)),
         sort_order: i,
       })),
     );
@@ -190,32 +210,46 @@ for (const s of STORES) {
       s.staff.map((st, i) => ({
         monthly_setup_id: ms.id,
         staff_name: st.name,
-        amount_monthly: st.amount,
+        amount_monthly: Math.round(st.amount * g),
         sort_order: i,
       })),
     );
 
-    await admin
-      .from("monthly_targets")
-      .upsert(
-        { store_id: storeId, year_month: yearMonth, sales_target: s.monthlyTarget },
-        { onConflict: "store_id,year_month" },
-      );
+    await admin.from("monthly_targets").upsert(
+      { store_id: storeId, year_month: yearMonth, sales_target: Math.round(s.monthlyTarget * g) },
+      { onConflict: "store_id,year_month" },
+    );
   }
-  console.log("  月初セットアップ(8月・9月)投入: 固定費", s.fixed.length, "件 / 月給", s.staff.length, "件");
+  console.log("  月初セットアップ投入:", END_MONTH_KEYS.length, "ヶ月分");
 
-  // ---- 日次実績: 8/1-8/31, 9/1-9/13 ----
+  // ---- 日次実績: 2024-09-01 〜 2026-09-13 ----
   const days = [];
-  for (let d = 1; d <= daysInMonth(2026, 8); d++) days.push(isoDate(2026, 8, d));
-  for (let d = 1; d <= 13; d++) days.push(isoDate(2026, 9, d));
+  {
+    let y = START.y, m = START.m;
+    while (true) {
+      const isLastMonth = y === 2026 && m === 9;
+      const dim = isLastMonth ? 13 : daysInMonth(y, m);
+      for (let d = 1; d <= dim; d++) days.push(isoDate(y, m, d));
+      if (isLastMonth) break;
+      m++;
+      if (m > 12) { m = 1; y++; }
+    }
+  }
+
+  const recordRows = [];
+  const catRows = [];
+  const payRows = [];
+  const costRows = [];
 
   for (let i = 0; i < days.length; i++) {
     const businessDate = days[i];
-    const dow = new Date(businessDate + "T00:00:00").getDay(); // 0=日
+    const monthKey = businessDate.slice(0, 7);
+    const g = growthFactor(monthKey);
+    const dow = new Date(businessDate + "T00:00:00").getDay();
     const weekendBoost = dow === 0 || dow === 6 ? 1.18 : dow === 5 ? 1.1 : 1.0;
     const totalSales = Math.max(
       10000,
-      Math.round(jitter(s.dailyTarget, 0.35) * weekendBoost),
+      Math.round(jitter(s.dailyTarget * g, 0.35) * weekendBoost),
     );
 
     const foodRatio = Math.min(0.92, Math.max(0.4, s.foodRatio * noise(0.08)));
@@ -231,72 +265,36 @@ for (const s of STORES) {
 
     const foodCogs = Math.round(foodSales * s.foodCostRatio * noise(0.2));
     const drinkCogs = Math.round(drinkSales * s.drinkCostRatio * noise(0.2));
-    const laborAmt = Math.round(jitter(s.laborDaily, 0.25));
+    const laborAmt = Math.round(jitter(s.laborDaily * g, 0.25));
 
-    // 取引先・現金/掛は毎日ではなくローテーションで付ける(現場の実感=時々まとめて仕入れる)
     const payType = () => (rand() < 0.22 ? "credit" : "cash");
     const foodVendor = i % 3 !== 2 ? s.foodVendors[i % s.foodVendors.length] : null;
     const drinkVendor = i % 4 !== 3 ? s.drinkVendors[i % s.drinkVendors.length] : null;
 
-    // 流動費: 消耗品はほぼ毎日、他の費目は数日に1回のペース(経費の多様さを見せる)
-    const variableCosts = [];
-    variableCosts.push({
-      cost_class: "variable",
-      item: "消耗品",
-      amount: Math.round(jitter(3500, 0.4)),
-      sort_order: 0,
-      counterparty: s.variableVendors[i % s.variableVendors.length],
-      payment_type: payType(),
+    const recordId = randomUUID();
+    recordRows.push({
+      id: recordId,
+      store_id: storeId,
+      business_date: businessDate,
+      status: "confirmed",
+      total_sales: totalSales,
+      guest_count: guestCount,
+      group_count: groupCount,
     });
-    const cyclerItem = VARIABLE_ITEMS[1 + (i % (VARIABLE_ITEMS.length - 1))];
-    if (i % 2 === 0) {
-      variableCosts.push({
-        cost_class: "variable",
-        item: cyclerItem,
-        amount: Math.round(jitter(2500, 0.5)),
-        sort_order: 1,
-        counterparty: s.variableVendors[(i + 1) % s.variableVendors.length],
-        payment_type: payType(),
-      });
-    }
 
-    const { data: rec, error: recErr } = await admin
-      .from("daily_records")
-      .upsert(
-        {
-          store_id: storeId,
-          business_date: businessDate,
-          status: "confirmed",
-          total_sales: totalSales,
-          guest_count: guestCount,
-          group_count: groupCount,
-        },
-        { onConflict: "store_id,business_date" },
-      )
-      .select("id")
-      .single();
-    if (recErr) throw recErr;
-    const recordId = rec.id;
-
-    await admin.from("daily_sales_categories").delete().eq("daily_record_id", recordId);
-    await admin.from("daily_payments").delete().eq("daily_record_id", recordId);
-    await admin.from("daily_costs").delete().eq("daily_record_id", recordId);
-
-    const { error: catErr } = await admin.from("daily_sales_categories").insert([
+    catRows.push(
       { daily_record_id: recordId, category: "フード", amount: foodSales, sort_order: 0 },
       { daily_record_id: recordId, category: "ドリンク", amount: drinkSales, sort_order: 1 },
-    ]);
-    if (catErr) throw catErr;
+    );
 
-    const { error: payErr } = await admin.from("daily_payments").insert([
+    payRows.push(
       { daily_record_id: recordId, method: "cash", amount: cashAmt },
       { daily_record_id: recordId, method: "card", amount: cardAmt },
       { daily_record_id: recordId, method: "emoney", amount: 0 },
       { daily_record_id: recordId, method: "receivable", amount: 0 },
-    ]);
-    if (payErr) throw payErr;
+    );
 
-    const { error: costErr } = await admin.from("daily_costs").insert([
+    costRows.push(
       {
         daily_record_id: recordId,
         cost_class: "cogs",
@@ -324,11 +322,39 @@ for (const s of STORES) {
         counterparty: null,
         payment_type: "cash",
       },
-      ...variableCosts.map((v) => ({ ...v, daily_record_id: recordId })),
-    ]);
-    if (costErr) throw costErr;
+      {
+        daily_record_id: recordId,
+        cost_class: "variable",
+        item: "消耗品",
+        amount: Math.round(jitter(3500, 0.4)),
+        sort_order: 0,
+        counterparty: s.variableVendors[i % s.variableVendors.length],
+        payment_type: payType(),
+      },
+    );
+    if (i % 2 === 0) {
+      const cyclerItem = VARIABLE_ITEMS[1 + (i % (VARIABLE_ITEMS.length - 1))];
+      costRows.push({
+        daily_record_id: recordId,
+        cost_class: "variable",
+        item: cyclerItem,
+        amount: Math.round(jitter(2500, 0.5)),
+        sort_order: 1,
+        counterparty: s.variableVendors[(i + 1) % s.variableVendors.length],
+        payment_type: payType(),
+      });
+    }
   }
-  console.log("  日次実績投入:", days.length, "日分(8月・9月)");
+
+  // 既存(以前投入した8-9月ぶん)を消してから作り直す
+  await admin.from("daily_records").delete().eq("store_id", storeId);
+
+  await insertChunked("daily_records", recordRows);
+  await insertChunked("daily_sales_categories", catRows);
+  await insertChunked("daily_payments", payRows);
+  await insertChunked("daily_costs", costRows);
+
+  console.log("  日次実績投入:", days.length, "日分(", days[0], "〜", days[days.length - 1], ")");
 }
 
 console.log("\ndone");

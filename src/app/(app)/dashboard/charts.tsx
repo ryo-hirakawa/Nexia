@@ -431,9 +431,9 @@ export function RankedBarList({
   return (
     <div className="space-y-2">
       {/* 目盛り（0 / 中間 / 最大）。バーの実トラック部分に位置を合わせる。 */}
-      <div className="flex items-center gap-2">
+      <div className="mb-2.5 flex items-center gap-2">
         <span className="w-24 shrink-0 sm:w-32" />
-        <span className="relative flex-1 text-[9px] text-muted">
+        <span className="relative h-3 flex-1 text-[9px] leading-3 text-muted">
           <span className="absolute left-0">¥0</span>
           <span className="absolute left-1/2 -translate-x-1/2">{manLabel(max / 2)}</span>
           <span className="absolute right-0">{manLabel(max)}</span>
