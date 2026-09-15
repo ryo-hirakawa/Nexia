@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { periodLabel, monthEnd, minDate } from "@/lib/period";
+import { setLastStoreCookie } from "@/lib/store-cookie";
 
 /** 前月/翌月ボタンでは、過去の完了済みの月は必ず「その月の末日」を基準日にする
  *  （日付を1日ずつ引き継ぐと、今日と同じ日付までしか表示されず月の途中で
@@ -32,6 +33,7 @@ export function ExpenseControls({
 
   const go = (o: Record<string, string>) => {
     const p = new URLSearchParams({ d: refDate, s: storeId, ...o });
+    setLastStoreCookie(p.get("s")!);
     start(() => router.push(`/expenses?${p.toString()}`));
   };
 

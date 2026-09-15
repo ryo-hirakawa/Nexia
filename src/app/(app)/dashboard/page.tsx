@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { requireMembership } from "@/lib/auth";
+import { LAST_STORE_COOKIE } from "@/lib/store-cookie";
 import { jstDateString, yen, isValidDateStr } from "@/lib/daily";
 import { latestRecordedDate } from "@/lib/monthly-server";
 import {
@@ -134,7 +136,11 @@ export default async function DashboardPage({
     );
   }
 
-  const store = stores.find((s) => s.id === sp.s) ?? stores[0];
+  const lastStoreId = (await cookies()).get(LAST_STORE_COOKIE)?.value;
+  const store =
+    stores.find((s) => s.id === sp.s) ??
+    stores.find((s) => s.id === lastStoreId) ??
+    stores[0];
   const isBar = store.industry === "bar";
   const view: DashView =
     sp.view === "day" || sp.view === "week" || sp.view === "month" ? sp.view : "month";

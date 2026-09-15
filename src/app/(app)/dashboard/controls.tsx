@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { periodLabel, shiftRef, type DashView } from "@/lib/period";
+import { setLastStoreCookie } from "@/lib/store-cookie";
 
 const VIEWS: { key: DashView; label: string }[] = [
   { key: "day", label: "日" },
@@ -31,6 +32,7 @@ export function DashControls({
 
   const go = (o: Record<string, string>) => {
     const p = new URLSearchParams({ view, d: refDate, s: storeId, ...o });
+    setLastStoreCookie(p.get("s")!);
     start(() => router.push(`/dashboard?${p.toString()}`));
   };
 

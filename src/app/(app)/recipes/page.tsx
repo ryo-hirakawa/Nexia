@@ -1,8 +1,10 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { requireMembership } from "@/lib/auth";
 import { INDUSTRY_LABEL, type Store } from "@/lib/types";
+import { LAST_STORE_COOKIE } from "@/lib/store-cookie";
+import { StorePickerLink } from "../store-picker-link";
 
 export default async function RecipesIndexPage() {
   await requireMembership();
@@ -16,6 +18,10 @@ export default async function RecipesIndexPage() {
 
   if (stores.length === 1) redirect(`/recipes/${stores[0].id}`);
 
+  const lastStoreId = (await cookies()).get(LAST_STORE_COOKIE)?.value;
+  const remembered = stores.find((s) => s.id === lastStoreId);
+  if (remembered) redirect(`/recipes/${remembered.id}`);
+
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold tracking-tight">レシピ原価</h1>
@@ -27,13 +33,14 @@ export default async function RecipesIndexPage() {
         <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface dark:bg-surface">
           {stores.map((s) => (
             <li key={s.id}>
-              <Link
+              <StorePickerLink
                 href={`/recipes/${s.id}`}
+                storeId={s.id}
                 className="flex items-center justify-between px-4 py-3 text-sm hover:bg-surface-2"
               >
                 <span className="font-medium">{s.name}</span>
                 <span className="text-xs text-muted">{INDUSTRY_LABEL[s.industry] ?? s.industry} →</span>
-              </Link>
+              </StorePickerLink>
             </li>
           ))}
         </ul>

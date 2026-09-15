@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { requireMembership } from "@/lib/auth";
+import { LAST_STORE_COOKIE } from "@/lib/store-cookie";
 import { jstDateString, yen, isValidDateStr } from "@/lib/daily";
 import { latestRecordedDate } from "@/lib/monthly-server";
 import {
@@ -37,7 +39,11 @@ export default async function ExpensesPage({
     );
   }
 
-  const store = stores.find((s) => s.id === sp.s) ?? stores[0];
+  const lastStoreId = (await cookies()).get(LAST_STORE_COOKIE)?.value;
+  const store =
+    stores.find((s) => s.id === sp.s) ??
+    stores.find((s) => s.id === lastStoreId) ??
+    stores[0];
   const refDate =
     sp.d && isValidDateStr(sp.d)
       ? sp.d

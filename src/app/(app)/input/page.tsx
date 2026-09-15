@@ -1,10 +1,12 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { requireMembership } from "@/lib/auth";
 import { jstDateString } from "@/lib/daily";
 import { latestRecordedDate } from "@/lib/monthly-server";
 import { INDUSTRY_LABEL, type Store } from "@/lib/types";
+import { LAST_STORE_COOKIE } from "@/lib/store-cookie";
+import { StorePickerLink } from "../store-picker-link";
 
 export default async function InputIndexPage() {
  await requireMembership();
@@ -24,6 +26,13 @@ export default async function InputIndexPage() {
  redirect(`/input/${stores[0].id}/${latest}`);
  }
 
+ const lastStoreId = (await cookies()).get(LAST_STORE_COOKIE)?.value;
+ const remembered = stores.find((s) => s.id === lastStoreId);
+ if (remembered) {
+ const latest = (await latestRecordedDate(remembered.id)) ?? yesterday;
+ redirect(`/input/${remembered.id}/${latest}`);
+ }
+
  return (
  <div className="space-y-4">
  <h1 className="text-xl font-bold tracking-tight">日次入力</h1>
@@ -35,15 +44,16 @@ export default async function InputIndexPage() {
  <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface dark:bg-surface">
  {stores.map((s) => (
  <li key={s.id}>
- <Link
+ <StorePickerLink
  href={`/input/${s.id}`}
+ storeId={s.id}
  className="flex items-center justify-between px-4 py-3 text-sm hover:bg-surface-2 "
  >
  <span className="font-medium">{s.name}</span>
  <span className="text-xs text-muted">
  {INDUSTRY_LABEL[s.industry] ?? s.industry} ・ 入力へ →
  </span>
- </Link>
+ </StorePickerLink>
  </li>
  ))}
  </ul>
