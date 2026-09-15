@@ -70,7 +70,12 @@ export default async function ExpensesPage({
           <p className="text-sm text-muted">{store.name}・{periodLabel("month", refDate)}</p>
         </div>
         <div className="mt-3 border-t border-line pt-3">
-          <ExpenseControls refDate={refDate} storeId={store.id} stores={stores.length > 1 ? stores : undefined} />
+          <ExpenseControls
+            refDate={refDate}
+            storeId={store.id}
+            todayKey={jstDateString(0)}
+            stores={stores.length > 1 ? stores : undefined}
+          />
         </div>
 
         {d.fetchErrors.length > 0 ? (
