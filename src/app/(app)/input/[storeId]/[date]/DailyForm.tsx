@@ -49,6 +49,7 @@ type CogsRow = {
  ingredientId: string;
  quantity: string;
 };
+type LaborRow = { staffId: string; hours: string };
 type RecvRow = { cp: string; amt: string };
 type CastRow = { name: string; nom: string; tbl: string; comp: string; back: string };
 
@@ -70,6 +71,7 @@ export default function DailyForm({
  salesCategories,
  vendors,
  ingredients,
+ staffMembers,
  setupMonth,
  setupExists,
 }: {
@@ -86,6 +88,7 @@ export default function DailyForm({
  salesCategories: string[];
  vendors: string[];
  ingredients: { id: string; name: string; unit: string }[];
+ staffMembers: { id: string; name: string; hourlyWage: number }[];
  setupMonth: string;
  setupExists: boolean;
 }) {
@@ -148,6 +151,11 @@ export default function DailyForm({
  const [labor, setLabor] = useState<Record<string, string>>(() =>
  Object.fromEntries(LABOR_ITEMS.map((i) => [i, costOf("labor", i)])),
  );
+ const [laborDetail, setLaborDetail] = useState<LaborRow[]>(() =>
+ initial.costs
+ .filter((c) => c.cost_class === "labor" && c.staffId)
+ .map((c) => ({ staffId: c.staffId as string, hours: c.quantity ? String(c.quantity) : "" })),
+ );
  const [vars, setVars] = useState<VarRow[]>(() => {
  const rows = initial.costs
  .filter((c) => c.cost_class === "variable")
@@ -195,6 +203,13 @@ export default function DailyForm({
  const varSum = useMemo(() => vars.reduce((s, r) => s + num(r.amount), 0), [vars]);
  const cogsDetailSum = (category: string) =>
  cogsDetail.filter((r) => r.category === category).reduce((s, r) => s + num(r.amount), 0);
+ const showStaffHourly = !isBar && staffMembers.length > 0;
+ const wageOf = (staffId: string) => staffMembers.find((s) => s.id === staffId)?.hourlyWage ?? 0;
+ const laborDetailSum = useMemo(
+ () => laborDetail.reduce((s, r) => s + Math.round(wageOf(r.staffId) * numF(r.hours)), 0),
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ [laborDetail, staffMembers],
+ );
  const guestNum = num(guestCount);
  const groupNum = num(groupCount);
 
@@ -241,8 +256,20 @@ export default function DailyForm({
  for (const i of COGS_ITEMS)
  if (num(cogs[i])) costs.push({ cost_class: "cogs", item: i, amount: num(cogs[i]) });
  }
- for (const i of LABOR_ITEMS)
+ for (const i of LABOR_ITEMS) {
+ if (i === "スタッフ時給" && showStaffHourly && laborDetail.length) continue;
  if (num(labor[i])) costs.push({ cost_class: "labor", item: i, amount: num(labor[i]) });
+ }
+ if (showStaffHourly)
+ for (const r of laborDetail)
+ if (r.staffId && numF(r.hours) > 0)
+ costs.push({
+ cost_class: "labor",
+ item: "スタッフ時給",
+ amount: Math.round(wageOf(r.staffId) * numF(r.hours)),
+ staffId: r.staffId,
+ quantity: numF(r.hours),
+ });
  for (const r of vars)
  if (num(r.amount) && r.item.trim())
  costs.push({
@@ -708,9 +735,84 @@ export default function DailyForm({
  </details>
  {LABOR_ITEMS.map((i) => (
  <Row key={i} label={`人件費 ${i}`}>
+ {i === "スタッフ時給" && showStaffHourly && laborDetail.length ? (
+ <span className="font-mono text-sm tabular-nums text-muted">
+ {yen(laborDetailSum)}（内訳から自動）
+ </span>
+ ) : (
  <input inputMode="numeric" value={labor[i]} onChange={(e) => setLabor({ ...labor, [i]: e.target.value })} className={inputCls} />
+ )}
  </Row>
  ))}
+ {showStaffHourly ? (
+ <details className="mt-1">
+ <summary className="cursor-pointer text-xs text-muted hover:text-foreground">
+ スタッフごとの時給・時間を記録する（任意）
+ </summary>
+ <div className="mt-2 space-y-2 border-t border-line pt-2">
+ {laborDetail.map((r, idx) => {
+ const wage = wageOf(r.staffId);
+ const rowAmount = Math.round(wage * numF(r.hours));
+ return (
+ <div key={idx} className="flex flex-wrap items-center gap-2">
+ <select
+ value={r.staffId}
+ onChange={(e) => {
+ const v = [...laborDetail];
+ v[idx] = { ...r, staffId: e.target.value };
+ setLaborDetail(v);
+ }}
+ className="rounded-md border border-line bg-surface px-2 py-1 text-sm dark:bg-surface"
+ >
+ <option value="">スタッフを選択</option>
+ {staffMembers.map((s) => (
+ <option key={s.id} value={s.id}>
+ {s.name}（時給{yen(s.hourlyWage)}）
+ </option>
+ ))}
+ </select>
+ <input
+ inputMode="decimal"
+ placeholder="時間"
+ value={r.hours}
+ onChange={(e) => {
+ const v = [...laborDetail];
+ v[idx] = { ...r, hours: e.target.value };
+ setLaborDetail(v);
+ }}
+ className={inputCls + " w-20"}
+ />
+ <span className="text-xs text-muted">h</span>
+ {r.staffId && numF(r.hours) > 0 ? (
+ <span className="font-mono text-xs tabular-nums text-muted">{yen(rowAmount)}</span>
+ ) : null}
+ <button
+ type="button"
+ onClick={() => setLaborDetail(laborDetail.filter((_, i) => i !== idx))}
+ className="ml-auto text-sm text-muted hover:text-bad"
+ >
+ 削除
+ </button>
+ </div>
+ );
+ })}
+ <button
+ type="button"
+ onClick={() => setLaborDetail([...laborDetail, { staffId: "", hours: "" }])}
+ className="rounded-md border border-line px-3 py-1 text-sm"
+ >
+ ＋ スタッフを追加
+ </button>
+ <p className="text-xs text-muted">
+ スタッフと時間を入れると、時給×時間が自動計算されて上の「人件費 スタッフ時給」に反映されます（内訳を1件でも追加すると直接入力欄は消えます）。スタッフの追加・時給の変更は
+ <a href={`/setup/${storeId}/${setupMonth.slice(0, 7)}`} className="underline">
+ 月初セットアップ
+ </a>
+ で行えます。
+ </p>
+ </div>
+ </details>
+ ) : null}
  {isBar ? (
  <Row label="人件費 キャストバック（上のキャスト別から自動）" muted>
  <span className="font-mono text-sm tabular-nums text-muted">{yen(castBackSum)}</span>

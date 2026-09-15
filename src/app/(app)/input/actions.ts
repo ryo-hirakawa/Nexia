@@ -34,6 +34,7 @@ export type SavePayload = {
     paymentType?: "cash" | "credit";
     ingredientId?: string | null;
     quantity?: number | null;
+    staffId?: string | null;
   }[];
   receivables: {
     direction: "incurred" | "collected";
@@ -159,6 +160,7 @@ export async function saveDailyRecord(p: SavePayload): Promise<Result> {
       payment_type: c.paymentType ?? "cash",
       ingredient_id: c.ingredientId || null,
       quantity: c.quantity && c.quantity > 0 ? c.quantity : null,
+      staff_id: c.staffId || null,
       sort_order: i,
     }));
   if (castBackSum > 0) {
@@ -172,6 +174,7 @@ export async function saveDailyRecord(p: SavePayload): Promise<Result> {
       payment_type: "cash",
       ingredient_id: null,
       quantity: null,
+      staff_id: null,
       sort_order: costRows.length,
     });
   }

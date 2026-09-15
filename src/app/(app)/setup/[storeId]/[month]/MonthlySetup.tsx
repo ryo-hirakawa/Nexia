@@ -10,6 +10,7 @@ import {
  saveVariableItems,
  saveSalesCategories,
  saveVendors,
+ saveStaffMembers,
 } from "@/app/(app)/setup/actions";
 
 const num = (s: string) => {
@@ -20,23 +21,28 @@ const str = (n: number) => (n ? String(n) : "");
 
 type FixedRow = { item: string; category: string; amount: string };
 type StaffRow = { name: string; amount: string };
+type HourlyStaffRow = { id?: string; name: string; hourlyWage: string };
 
 export default function MonthlySetup({
  storeName,
+ industry,
  initial,
  prev,
  variableItems,
  salesCategories,
  vendors,
+ staffMembers,
  nextMonth,
  prevMonth,
 }: {
  storeName: string;
+ industry: string;
  initial: MonthlySetupForm;
  prev: MonthlySetupForm;
  variableItems: string[];
  salesCategories: string[];
  vendors: string[];
+ staffMembers: { id: string; name: string; hourlyWage: number }[];
  prevMonthKey: string;
  nextMonth: string;
  prevMonth: string;
@@ -64,6 +70,9 @@ export default function MonthlySetup({
  const [newCat, setNewCat] = useState("");
  const [vendorList, setVendorList] = useState<string[]>(vendors);
  const [newVendor, setNewVendor] = useState("");
+ const [hourlyStaff, setHourlyStaff] = useState<HourlyStaffRow[]>(
+ staffMembers.map((s) => ({ id: s.id, name: s.name, hourlyWage: str(s.hourlyWage) })),
+ );
  const [salesTarget, setSalesTarget] = useState(str(initial.salesTarget));
 
  const [error, setError] = useState<string | null>(null);
@@ -133,6 +142,16 @@ export default function MonthlySetup({
  if (!r4.ok) {
  setError(r4.error);
  return;
+ }
+ if (industry === "restaurant") {
+ const r5 = await saveStaffMembers(
+ initial.storeId,
+ hourlyStaff.map((r) => ({ id: r.id, name: r.name, hourlyWage: num(r.hourlyWage) })),
+ );
+ if (!r5.ok) {
+ setError(r5.error);
+ return;
+ }
  }
  setSavedMsg("保存しました");
  router.refresh();
@@ -413,6 +432,58 @@ export default function MonthlySetup({
  （人件費へ）
  </p>
  </section>
+
+ {/* アルバイト（時給）マスタ */}
+ {industry === "restaurant" ? (
+ <section className="rounded-xl border border-line bg-surface p-4 dark:bg-surface">
+ <h2 className="mb-1 text-sm font-semibold">アルバイト（時給）マスタ</h2>
+ <p className="mb-3 text-xs text-muted">
+ 日次入力の「人件費 スタッフ時給」で、誰が何時間働いたかを記録したいときの選択肢（店舗共通・月ごとの設定ではありません）。ここで登録した時給は変更するまで使われ続けます。
+ </p>
+ <div className="space-y-2">
+ {hourlyStaff.map((r, i) => (
+ <div key={i} className="flex flex-wrap items-center gap-2">
+ <input
+ placeholder="スタッフ名"
+ value={r.name}
+ onChange={(e) => {
+ const v = [...hourlyStaff];
+ v[i] = { ...r, name: e.target.value };
+ setHourlyStaff(v);
+ }}
+ className={inputCls + " w-44"}
+ />
+ <input
+ inputMode="numeric"
+ placeholder="時給"
+ value={r.hourlyWage}
+ onChange={(e) => {
+ const v = [...hourlyStaff];
+ v[i] = { ...r, hourlyWage: e.target.value };
+ setHourlyStaff(v);
+ }}
+ className={amtCls}
+ />
+ <span className="text-xs text-muted">円/h</span>
+ <button
+ type="button"
+ onClick={() => setHourlyStaff(hourlyStaff.filter((_, j) => j !== i))}
+ className="text-sm text-muted hover:text-bad"
+ >
+ 削除
+ </button>
+ </div>
+ ))}
+ </div>
+ <button
+ type="button"
+ onClick={() => setHourlyStaff([...hourlyStaff, { name: "", hourlyWage: "" }])}
+ className="mt-2 rounded-md border border-line px-3 py-1 text-sm "
+ >
+ ＋ スタッフを追加
+ </button>
+ </section>
+ ) : null}
 
  {/* 流動費の費目リスト */}
  <section className="rounded-xl border border-line bg-surface p-4 dark:bg-surface">

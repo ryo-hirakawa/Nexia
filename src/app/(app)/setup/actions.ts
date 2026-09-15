@@ -136,6 +136,54 @@ export async function saveSalesCategories(
   return { ok: true };
 }
 
+/**
+ * id付きの行は更新、id無しは新規、既存にあって送られてこなかったものは削除。
+ * (日次入力の daily_costs.staff_id から参照されるため、取引先マスタ等のような
+ * 「全削除して入れ直す」方式は使えない。)
+ */
+export async function saveStaffMembers(
+  storeId: string,
+  rows: { id?: string; name: string; hourlyWage: number }[],
+): Promise<Result> {
+  await requireMembership();
+  const supabase = await createClient();
+
+  const clean = rows
+    .map((r) => ({ id: r.id, name: r.name.trim(), hourlyWage: n0(r.hourlyWage) }))
+    .filter((r) => r.name !== "")
+    .slice(0, 30);
+
+  const { data: existing } = await supabase.from("staff_members").select("id").eq("store_id", storeId);
+  const existingIds = new Set((existing ?? []).map((r) => r.id));
+  const keepIds = new Set(clean.filter((r) => r.id).map((r) => r.id as string));
+  const toDelete = [...existingIds].filter((id) => !keepIds.has(id));
+
+  if (toDelete.length) {
+    const { error } = await supabase.from("staff_members").delete().in("id", toDelete);
+    if (error) return { ok: false, error: error.message };
+  }
+
+  for (let i = 0; i < clean.length; i++) {
+    const r = clean[i];
+    if (r.id) {
+      const { error } = await supabase
+        .from("staff_members")
+        .update({ name: r.name, hourly_wage: r.hourlyWage, sort_order: i })
+        .eq("id", r.id);
+      if (error) return { ok: false, error: error.message };
+    } else {
+      const { error } = await supabase
+        .from("staff_members")
+        .insert({ store_id: storeId, name: r.name, hourly_wage: r.hourlyWage, sort_order: i });
+      if (error) return { ok: false, error: error.message };
+    }
+  }
+
+  revalidatePath(`/setup/${storeId}`);
+  revalidatePath("/input");
+  return { ok: true };
+}
+
 export async function saveVendors(
   storeId: string,
   names: string[],

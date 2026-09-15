@@ -14,6 +14,7 @@ export type CostLine = {
   paymentType?: CostPaymentType;
   ingredientId?: string | null;
   quantity?: number | null;
+  staffId?: string | null;
 };
 
 export type ReceivableDirection = "incurred" | "collected";

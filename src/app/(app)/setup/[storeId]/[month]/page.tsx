@@ -8,6 +8,7 @@ import {
   loadVendors,
 } from "@/lib/monthly-server";
 import { addMonths } from "@/lib/finance";
+import { loadStaffMembers } from "@/lib/staff-server";
 import { SALES_CATEGORIES as BAR_SALES_CATEGORIES } from "@/lib/bar-preset";
 import { SALES_CATEGORIES as RESTAURANT_SALES_CATEGORIES } from "@/lib/restaurant-preset";
 import MonthlySetup from "./MonthlySetup";
@@ -31,12 +32,13 @@ export default async function MonthlySetupPage({
     .maybeSingle();
   if (!store) notFound();
 
-  const [current, prev, variableItems, salesCategories, vendors] = await Promise.all([
+  const [current, prev, variableItems, salesCategories, vendors, staffMembers] = await Promise.all([
     loadMonthlySetup(storeId, yearMonth),
     loadMonthlySetup(storeId, addMonths(yearMonth, -1)),
     loadVariableItems(storeId),
     loadSalesCategories(storeId),
     loadVendors(storeId),
+    store.industry === "restaurant" ? loadStaffMembers(storeId) : Promise.resolve([]),
   ]);
 
   const presetCategories =
@@ -45,11 +47,13 @@ export default async function MonthlySetupPage({
   return (
     <MonthlySetup
       storeName={store.name}
+      industry={store.industry}
       initial={current}
       prev={prev}
       variableItems={variableItems}
       salesCategories={salesCategories.length ? salesCategories : [...presetCategories]}
       vendors={vendors}
+      staffMembers={staffMembers}
       prevMonthKey={addMonths(yearMonth, -1)}
       nextMonth={addMonths(yearMonth, 1).slice(0, 7)}
       prevMonth={addMonths(yearMonth, -1).slice(0, 7)}

@@ -85,7 +85,9 @@ export async function loadDailyRecord(
       .eq("daily_record_id", rec.id),
     supabase
       .from("daily_costs")
-      .select("cost_class, item, amount, note, counterparty, payment_type, ingredient_id, quantity, sort_order")
+      .select(
+        "cost_class, item, amount, note, counterparty, payment_type, ingredient_id, quantity, staff_id, sort_order",
+      )
       .eq("daily_record_id", rec.id)
       .order("sort_order"),
     supabase
@@ -130,6 +132,7 @@ export async function loadDailyRecord(
       paymentType: c.payment_type as "cash" | "credit",
       ingredientId: c.ingredient_id,
       quantity: c.quantity === null ? null : Number(c.quantity),
+      staffId: c.staff_id,
     })),
     receivables: (recvs ?? []).map((r) => ({
       direction: r.direction as ReceivableDirection,
