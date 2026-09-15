@@ -539,6 +539,11 @@ const PAGE_SIZE = 1000;
  * 複数ヶ月分の daily_costs のように1000行を超えうる集計では、
  * .range() でページングして全件取得しないと黙って集計が欠落する。
  */
+/**
+ * 取得中にエラーが起きても例外は投げず、それまでに取れた行だけを返す
+ * （経費分析ページの1セクションの一時的な取得失敗でページ全体を
+ * 500エラーにしないため。ダッシュボードの fetchErrors と同様の考え方）。
+ */
 async function fetchAllRows<T>(
   build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
 ): Promise<T[]> {
@@ -546,7 +551,7 @@ async function fetchAllRows<T>(
   let from = 0;
   for (;;) {
     const { data, error } = await build(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
+    if (error) break;
     const rows = data ?? [];
     all.push(...rows);
     if (rows.length < PAGE_SIZE) break;
