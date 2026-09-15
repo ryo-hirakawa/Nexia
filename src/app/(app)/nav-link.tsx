@@ -23,9 +23,12 @@ export function NavLink({ href, label }: { href: string; label: string }) {
     (href !== "/dashboard" && pathname === href);
 
   return (
+    // prefetch を付けない: 付けると店舗選択などCookie依存のページも先読み・
+    // キャッシュされ、Cookieを書き換えた直後にクリックしても古い内容が
+    // 表示されてしまう(店舗を切り替えても遷移先が前の店舗のまま、という
+    // 不具合の原因だった)。
     <Link
       href={href}
-      prefetch
       className={
         "transition-colors " +
         (active ? "text-white" : "text-white/75 hover:text-white")
