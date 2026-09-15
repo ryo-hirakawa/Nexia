@@ -998,7 +998,7 @@ function Row({
  muted?: boolean;
 }) {
  return (
- <div className="flex items-center justify-between gap-3 py-1">
+ <div className="flex max-w-md items-center justify-between gap-3 py-1">
  <span className={"text-sm " + (muted ? "text-muted" : "text-foreground ")}>
  {label}
  </span>
