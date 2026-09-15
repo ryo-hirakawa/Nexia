@@ -513,3 +513,179 @@ export async function loadMonthlyYoY(
     };
   });
 }
+
+function monthKeysBack(refDate: string, months: number): string[] {
+  const [ey, em] = [Number(refDate.slice(0, 4)), Number(refDate.slice(5, 7))];
+  const keys: string[] = [];
+  for (let i = months - 1; i >= 0; i--) {
+    let yy = ey;
+    let mm = em - i;
+    while (mm <= 0) {
+      mm += 12;
+      yy -= 1;
+    }
+    keys.push(`${yy}-${String(mm).padStart(2, "0")}`);
+  }
+  return keys;
+}
+const monthLabelOf = (k: string) => {
+  const [yy, mm] = k.split("-").map(Number);
+  return `'${String(yy).slice(2)}/${mm}`;
+};
+
+export type MonthlyFlRate = { monthKey: string; label: string; flRate: number | null; hasData: boolean };
+
+/**
+ * 月次のFLコスト率（(原価+人件費)÷売上）推移。経費分析ページの傾向表示用。
+ * 注: 月給スタッフ（月初セットアップの日割り分）は日次の daily_costs に
+ * 存在しないため含まない。ダッシュボードのFLコスト率（月給を含む）とは
+ * 完全には一致しない、日次記録ベースの簡易版。
+ */
+export async function loadFlRateTrend(
+  storeId: string,
+  refDate: string,
+  months = 12,
+): Promise<MonthlyFlRate[]> {
+  const supabase = await createClient();
+  const keys = monthKeysBack(refDate, months);
+  const rangeStart = `${keys[0]}-01`;
+  const lastKeyDim = daysInMonth(keys[keys.length - 1] + "-01");
+  const rangeEnd = `${keys[keys.length - 1]}-${String(lastKeyDim).padStart(2, "0")}`;
+
+  const [{ data: recs }, { data: costs }] = await Promise.all([
+    supabase
+      .from("daily_records")
+      .select("business_date, total_sales")
+      .eq("store_id", storeId)
+      .gte("business_date", rangeStart)
+      .lte("business_date", rangeEnd),
+    supabase
+      .from("daily_costs")
+      .select("cost_class, amount, daily_records!inner(store_id, business_date)")
+      .eq("daily_records.store_id", storeId)
+      .in("cost_class", ["cogs", "labor"])
+      .gte("daily_records.business_date", rangeStart)
+      .lte("daily_records.business_date", rangeEnd),
+  ]);
+
+  const salesByMonth = new Map<string, number>();
+  for (const r of recs ?? []) {
+    const mk = r.business_date.slice(0, 7);
+    salesByMonth.set(mk, (salesByMonth.get(mk) ?? 0) + Number(r.total_sales));
+  }
+  const costByMonth = new Map<string, number>();
+  for (const c of (costs ?? []) as { amount: number; daily_records: { business_date: string } | { business_date: string }[] }[]) {
+    const dr = Array.isArray(c.daily_records) ? c.daily_records[0] : c.daily_records;
+    const mk = dr.business_date.slice(0, 7);
+    costByMonth.set(mk, (costByMonth.get(mk) ?? 0) + Number(c.amount));
+  }
+
+  return keys.map((k) => {
+    const sales = salesByMonth.get(k) ?? 0;
+    const cost = costByMonth.get(k) ?? 0;
+    return {
+      monthKey: k,
+      label: monthLabelOf(k),
+      flRate: sales > 0 ? cost / sales : null,
+      hasData: salesByMonth.has(k),
+    };
+  });
+}
+
+export type EntityMonthlyTrend = {
+  name: string;
+  monthly: { monthKey: string; label: string; amount: number }[];
+  total: number;
+};
+
+/** 取引先別（仕入れ・流動費）の月次コスト推移。合計降順で上位 topN 件のみ。 */
+export async function loadCounterpartyTrend(
+  storeId: string,
+  refDate: string,
+  months = 3,
+  topN = 8,
+): Promise<EntityMonthlyTrend[]> {
+  const supabase = await createClient();
+  const keys = monthKeysBack(refDate, months);
+  const rangeStart = `${keys[0]}-01`;
+  const lastKeyDim = daysInMonth(keys[keys.length - 1] + "-01");
+  const rangeEnd = `${keys[keys.length - 1]}-${String(lastKeyDim).padStart(2, "0")}`;
+
+  const { data } = await supabase
+    .from("daily_costs")
+    .select("amount, counterparty, daily_records!inner(store_id, business_date)")
+    .eq("daily_records.store_id", storeId)
+    .in("cost_class", ["cogs", "variable"])
+    .not("counterparty", "is", null)
+    .gte("daily_records.business_date", rangeStart)
+    .lte("daily_records.business_date", rangeEnd);
+
+  const byName = new Map<string, Map<string, number>>();
+  for (const c of (data ?? []) as {
+    amount: number;
+    counterparty: string | null;
+    daily_records: { business_date: string } | { business_date: string }[];
+  }[]) {
+    const dr = Array.isArray(c.daily_records) ? c.daily_records[0] : c.daily_records;
+    const mk = dr.business_date.slice(0, 7);
+    const name = c.counterparty as string;
+    if (!byName.has(name)) byName.set(name, new Map());
+    const mm = byName.get(name)!;
+    mm.set(mk, (mm.get(mk) ?? 0) + Number(c.amount));
+  }
+
+  return [...byName.entries()]
+    .map(([name, mm]) => {
+      const monthly = keys.map((k) => ({ monthKey: k, label: monthLabelOf(k), amount: mm.get(k) ?? 0 }));
+      return { name, monthly, total: monthly.reduce((s, m) => s + m.amount, 0) };
+    })
+    .sort((a, b) => b.total - a.total)
+    .slice(0, topN);
+}
+
+/** スタッフ別（時給）人件費の月次推移。 */
+export async function loadStaffTrend(
+  storeId: string,
+  refDate: string,
+  months = 3,
+): Promise<EntityMonthlyTrend[]> {
+  const supabase = await createClient();
+  const keys = monthKeysBack(refDate, months);
+  const rangeStart = `${keys[0]}-01`;
+  const lastKeyDim = daysInMonth(keys[keys.length - 1] + "-01");
+  const rangeEnd = `${keys[keys.length - 1]}-${String(lastKeyDim).padStart(2, "0")}`;
+
+  const [{ data: costs }, { data: staff }] = await Promise.all([
+    supabase
+      .from("daily_costs")
+      .select("amount, staff_id, daily_records!inner(store_id, business_date)")
+      .eq("daily_records.store_id", storeId)
+      .eq("cost_class", "labor")
+      .not("staff_id", "is", null)
+      .gte("daily_records.business_date", rangeStart)
+      .lte("daily_records.business_date", rangeEnd),
+    supabase.from("staff_members").select("id, name").eq("store_id", storeId),
+  ]);
+  const nameOf = new Map((staff ?? []).map((s) => [s.id, s.name]));
+
+  const byId = new Map<string, Map<string, number>>();
+  for (const c of (costs ?? []) as {
+    amount: number;
+    staff_id: string | null;
+    daily_records: { business_date: string } | { business_date: string }[];
+  }[]) {
+    const dr = Array.isArray(c.daily_records) ? c.daily_records[0] : c.daily_records;
+    const mk = dr.business_date.slice(0, 7);
+    const id = c.staff_id as string;
+    if (!byId.has(id)) byId.set(id, new Map());
+    const mm = byId.get(id)!;
+    mm.set(mk, (mm.get(mk) ?? 0) + Number(c.amount));
+  }
+
+  return [...byId.entries()]
+    .map(([id, mm]) => {
+      const monthly = keys.map((k) => ({ monthKey: k, label: monthLabelOf(k), amount: mm.get(k) ?? 0 }));
+      return { name: nameOf.get(id) ?? "（削除済みスタッフ）", monthly, total: monthly.reduce((s, m) => s + m.amount, 0) };
+    })
+    .sort((a, b) => b.total - a.total);
+}

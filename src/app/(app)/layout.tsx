@@ -23,6 +23,7 @@ export default async function AppLayout({
 
   const nav: { href: string; label: string }[] = [
     { href: "/dashboard", label: "ダッシュボード" },
+    { href: "/expenses", label: "経費分析" },
   ];
   if (canWrite) {
     nav.push({ href: "/input", label: "日次入力" });

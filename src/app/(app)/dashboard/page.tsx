@@ -24,11 +24,9 @@ import {
   AchievementGauge,
   TrendBars,
   CompositionDonut,
-  CostCompareBars,
   WeekdayBars,
   MiniCompareBars,
   MonthlyYoYBars,
-  RankedBarList,
 } from "./charts";
 import { DashControls } from "./controls";
 import {
@@ -596,7 +594,7 @@ export default async function DashboardPage({
             </Card>
           </div>
 
-          {/* ⑥ 経費・人件費の内訳 */}
+          {/* ⑥ 経費の概況（詳細な内訳・推移は経費分析ページへ） */}
           <Card title="費目別 経費">
             <CompositionDonut
               data={d.costByClass.filter((c) => c.amount > 0).map((c) => ({
@@ -606,61 +604,14 @@ export default async function DashboardPage({
               centerLabel="経費計"
               centerValue={costTotal}
             />
-            <div className="mt-4 space-y-4 border-t border-line pt-4">
-              <h3 className="text-xs font-semibold text-navy">経費の内訳（どこに使ったか）</h3>
-              {d.cogsByItem.length ? (
-                <BreakdownBlock label="仕入れ（原価）" total={d.cogs}>
-                  <RankedBarList items={d.cogsByItem} />
-                </BreakdownBlock>
-              ) : null}
-              {d.laborByItem.length ? (
-                <BreakdownBlock label="人件費" total={d.labor}>
-                  <RankedBarList items={d.laborByItem} />
-                </BreakdownBlock>
-              ) : null}
-              {d.variableByItem.length ? (
-                <BreakdownBlock label="流動費" total={d.variable}>
-                  <RankedBarList items={d.variableByItem} />
-                </BreakdownBlock>
-              ) : null}
-              {d.byCounterparty.length ? (
-                <BreakdownBlock
-                  label="取引先別（仕入れ・流動費）"
-                  total={d.byCounterparty.reduce((s, i) => s + i.amount, 0)}
-                  note={
-                    d.creditPayable > 0
-                      ? `内 掛（買掛）合計 ${yen(d.creditPayable)}（支払い済みかは別管理）`
-                      : undefined
-                  }
-                >
-                  <RankedBarList
-                    items={d.byCounterparty.map((v) => ({ name: v.name, amount: v.amount, sub: v.credit }))}
-                    subLabel="内 掛（買掛）"
-                  />
-                </BreakdownBlock>
-              ) : null}
+            <div className="mt-4 border-t border-line pt-4">
+              <Link
+                href={`/expenses?s=${store.id}&d=${refDate}`}
+                className="text-sm font-medium text-navy underline"
+              >
+                経費の内訳・推移を見る（取引先別・食材別・スタッフ別など）→
+              </Link>
             </div>
-            {hasPrev ? (
-              <details className="mt-3 border-t border-line pt-3">
-                <summary className="cursor-pointer select-none text-xs text-muted">
-                  {CUR_LABEL[view]} vs {PREV_LABEL[view]} のグラフを見る
-                </summary>
-                <div className="mt-2">
-                  <CostCompareBars
-                    data={d.costByClass.map((c) => ({
-                      label: c.label,
-                      current: c.amount,
-                      previous: previous.costByClass.find((p) => p.key === c.key)?.amount ?? 0,
-                    }))}
-                    curLabel={CUR_LABEL[view]}
-                    prevLabel={PREV_LABEL[view]}
-                  />
-                  <p className="mt-1 text-right text-xs text-muted">
-                    経費計 {yen(costTotal)}（{PREV_LABEL[view]} {yen(prevCostTotal)}）
-                  </p>
-                </div>
-              </details>
-            ) : null}
             <div className="mt-3 space-y-1 border-t border-line pt-3 text-xs text-muted">
               <p>
                 固定費・月給スタッフは、休業日や未入力日があっても発生する費用として、対象期間の暦日数で按分（月が終了していれば設定額の全額）。
@@ -951,30 +902,5 @@ function WeekdayCard({
         <Empty />
       )}
     </Card>
-  );
-}
-
-/** 経費内訳の1ブロック（見出し＋合計＋常時表示の棒グラフ）。details に畳まず、
- *  「経費がどこに使われているか」が開かなくても分かるようにする。 */
-function BreakdownBlock({
-  label,
-  total,
-  note,
-  children,
-}: {
-  label: string;
-  total: number;
-  note?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <div className="mb-1.5 flex items-baseline justify-between">
-        <span className="text-xs font-medium text-muted">{label}</span>
-        <span className="font-mono text-xs tabular-nums text-muted">{yen(total)}</span>
-      </div>
-      {children}
-      {note ? <p className="mt-1 text-[10px] text-muted">{note}</p> : null}
-    </div>
   );
 }

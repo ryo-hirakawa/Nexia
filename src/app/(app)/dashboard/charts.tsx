@@ -102,11 +102,15 @@ export function AchievementGauge({ rate }: { rate: number | null }) {
  *  ときは従来どおり数字を常時表示する。 */
 export function TrendBars({
   data,
+  unit = "yen",
 }: {
   data: { label: string; value: number; dim?: boolean }[];
+  /** "yen"(既定): 万円表記 / "percent": 0-1の比率を%表記 */
+  unit?: "yen" | "percent";
 }) {
   const [ref, w] = useWidth();
   const dense = data.length > 12;
+  const fmt = (v: number) => (unit === "percent" ? (v * 100).toFixed(1) + "%" : manLabel(v));
   return (
     <div ref={ref} className="h-48 w-full">
       {w > 0 ? (
@@ -126,7 +130,7 @@ export function TrendBars({
           />
           <YAxis
             domain={[0, "auto"]}
-            tickFormatter={(v) => manLabel(Number(v) || 0)}
+            tickFormatter={(v) => fmt(Number(v) || 0)}
             tick={{ fontSize: 10, fill: MUTED }}
             axisLine={false}
             tickLine={false}
@@ -140,7 +144,9 @@ export function TrendBars({
               return (
                 <TooltipBox>
                   <div className="font-semibold">{p.label}</div>
-                  <div className="mt-0.5 font-mono tabular-nums">{yen0(p.value)}</div>
+                  <div className="mt-0.5 font-mono tabular-nums">
+                    {unit === "percent" ? fmt(p.value) : yen0(p.value)}
+                  </div>
                   {p.dim ? <div className="mt-0.5 text-muted">未入力（休業を含む可能性があります）</div> : null}
                 </TooltipBox>
               );
@@ -154,7 +160,7 @@ export function TrendBars({
               <LabelList
                 dataKey="value"
                 position="top"
-                formatter={(v) => manLabel(Number(v) || 0)}
+                formatter={(v) => fmt(Number(v) || 0)}
                 style={{ fontSize: 9, fill: MUTED }}
               />
             ) : null}
