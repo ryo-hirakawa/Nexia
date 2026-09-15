@@ -12,7 +12,7 @@ export default async function RecipesIndexPage() {
     .select("id, client_id, name, industry, template, timezone, created_at")
     .order("created_at", { ascending: true });
 
-  const stores = (data ?? []) as Store[];
+  const stores = ((data ?? []) as Store[]).filter((s) => s.industry === "restaurant");
 
   if (stores.length === 1) redirect(`/recipes/${stores[0].id}`);
 

@@ -13,8 +13,12 @@ export default async function RecipesPage({
   const { storeId } = await params;
 
   const supabase = await createClient();
-  const { data: store } = await supabase.from("stores").select("id, name").eq("id", storeId).maybeSingle();
-  if (!store) notFound();
+  const { data: store } = await supabase
+    .from("stores")
+    .select("id, name, industry")
+    .eq("id", storeId)
+    .maybeSingle();
+  if (!store || store.industry !== "restaurant") notFound();
 
   const [ingredients, menuItems] = await Promise.all([
     loadIngredients(storeId),
