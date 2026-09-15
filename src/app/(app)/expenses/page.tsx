@@ -44,9 +44,16 @@ export default async function ExpensesPage({
       : ((await latestRecordedDate(store.id)) ?? jstDateString(0));
   const prevRefDate = shiftRef("month", refDate, -1);
 
-  const [d, previous, flTrend, vendorTrend, staffTrend] = await Promise.all([
+  // このページは loadDashboardData を2回(当月・前月)呼ぶ上に、月次推移の
+  // 集計3種も加わるため、全部を1つの Promise.all にまとめると同時に飛ぶ
+  // クエリ数が多くなりすぎて接続が失敗することがあった(1回のリクエストで
+  // 二桁後半の同時クエリ)。当月・前月をまず取得してから、月次推移3種を
+  // 別の Promise.all で取得する2段階に分け、ピーク時の同時実行数を抑える。
+  const [d, previous] = await Promise.all([
     loadDashboardData(store.id, "month", refDate),
     loadDashboardData(store.id, "month", prevRefDate, { detail: false }),
+  ]);
+  const [flTrend, vendorTrend, staffTrend] = await Promise.all([
     loadFlRateTrend(store.id, refDate, 12),
     loadCounterpartyTrend(store.id, refDate, 3, 8),
     loadStaffTrend(store.id, refDate, 3),
