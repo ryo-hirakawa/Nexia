@@ -105,12 +105,12 @@ export function TrendBars({
   unit = "yen",
 }: {
   data: { label: string; value: number; dim?: boolean }[];
-  /** "yen"(既定): 万円表記 / "percent": 0-1の比率を%表記 */
+  /** "yen"(既定): 万円表記 / "percent": 値は0-100スケールで渡す(%表記) */
   unit?: "yen" | "percent";
 }) {
   const [ref, w] = useWidth();
   const dense = data.length > 12;
-  const fmt = (v: number) => (unit === "percent" ? (v * 100).toFixed(1) + "%" : manLabel(v));
+  const fmt = (v: number) => (unit === "percent" ? v.toFixed(1) + "%" : manLabel(v));
   return (
     <div ref={ref} className="h-48 w-full">
       {w > 0 ? (

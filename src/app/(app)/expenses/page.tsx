@@ -163,7 +163,7 @@ export default async function ExpensesPage({
           <Card title="FLコスト率の推移（直近12ヶ月）">
             <TrendBars
               unit="percent"
-              data={flTrend.map((m) => ({ label: m.label, value: m.flRate ?? 0, dim: !m.hasData }))}
+              data={flTrend.map((m) => ({ label: m.label, value: (m.flRate ?? 0) * 100, dim: !m.hasData }))}
             />
             <p className="mt-2 text-xs text-muted">
               FLコスト率 = (原価＋人件費) ÷ 売上。月給スタッフの日割り分は含まない、日次記録ベースの簡易値です（ダッシュボードのFLコスト率とは一致しない場合があります）。

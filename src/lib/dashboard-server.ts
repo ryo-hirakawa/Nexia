@@ -533,6 +533,28 @@ const monthLabelOf = (k: string) => {
   return `'${String(yy).slice(2)}/${mm}`;
 };
 
+const PAGE_SIZE = 1000;
+/**
+ * Supabase/PostgRESTは1クエリあたり既定で最大1000行しか返さない。
+ * 複数ヶ月分の daily_costs のように1000行を超えうる集計では、
+ * .range() でページングして全件取得しないと黙って集計が欠落する。
+ */
+async function fetchAllRows<T>(
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+  const all: T[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await build(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    const rows = data ?? [];
+    all.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return all;
+}
+
 export type MonthlyFlRate = { monthKey: string; label: string; flRate: number | null; hasData: boolean };
 
 /**
@@ -552,20 +574,25 @@ export async function loadFlRateTrend(
   const lastKeyDim = daysInMonth(keys[keys.length - 1] + "-01");
   const rangeEnd = `${keys[keys.length - 1]}-${String(lastKeyDim).padStart(2, "0")}`;
 
-  const [{ data: recs }, { data: costs }] = await Promise.all([
+  const [{ data: recs }, costs] = await Promise.all([
     supabase
       .from("daily_records")
       .select("business_date, total_sales")
       .eq("store_id", storeId)
       .gte("business_date", rangeStart)
       .lte("business_date", rangeEnd),
-    supabase
-      .from("daily_costs")
-      .select("cost_class, amount, daily_records!inner(store_id, business_date)")
-      .eq("daily_records.store_id", storeId)
-      .in("cost_class", ["cogs", "labor"])
-      .gte("daily_records.business_date", rangeStart)
-      .lte("daily_records.business_date", rangeEnd),
+    fetchAllRows<{ amount: number; daily_records: { business_date: string } | { business_date: string }[] }>(
+      (from, to) =>
+        supabase
+          .from("daily_costs")
+          .select("cost_class, amount, daily_records!inner(store_id, business_date)")
+          .eq("daily_records.store_id", storeId)
+          .in("cost_class", ["cogs", "labor"])
+          .gte("daily_records.business_date", rangeStart)
+          .lte("daily_records.business_date", rangeEnd)
+          .order("id")
+          .range(from, to),
+    ),
   ]);
 
   const salesByMonth = new Map<string, number>();
@@ -574,7 +601,7 @@ export async function loadFlRateTrend(
     salesByMonth.set(mk, (salesByMonth.get(mk) ?? 0) + Number(r.total_sales));
   }
   const costByMonth = new Map<string, number>();
-  for (const c of (costs ?? []) as { amount: number; daily_records: { business_date: string } | { business_date: string }[] }[]) {
+  for (const c of costs) {
     const dr = Array.isArray(c.daily_records) ? c.daily_records[0] : c.daily_records;
     const mk = dr.business_date.slice(0, 7);
     costByMonth.set(mk, (costByMonth.get(mk) ?? 0) + Number(c.amount));
@@ -611,21 +638,25 @@ export async function loadCounterpartyTrend(
   const lastKeyDim = daysInMonth(keys[keys.length - 1] + "-01");
   const rangeEnd = `${keys[keys.length - 1]}-${String(lastKeyDim).padStart(2, "0")}`;
 
-  const { data } = await supabase
-    .from("daily_costs")
-    .select("amount, counterparty, daily_records!inner(store_id, business_date)")
-    .eq("daily_records.store_id", storeId)
-    .in("cost_class", ["cogs", "variable"])
-    .not("counterparty", "is", null)
-    .gte("daily_records.business_date", rangeStart)
-    .lte("daily_records.business_date", rangeEnd);
-
-  const byName = new Map<string, Map<string, number>>();
-  for (const c of (data ?? []) as {
+  const data = await fetchAllRows<{
     amount: number;
     counterparty: string | null;
     daily_records: { business_date: string } | { business_date: string }[];
-  }[]) {
+  }>((from, to) =>
+    supabase
+      .from("daily_costs")
+      .select("amount, counterparty, daily_records!inner(store_id, business_date)")
+      .eq("daily_records.store_id", storeId)
+      .in("cost_class", ["cogs", "variable"])
+      .not("counterparty", "is", null)
+      .gte("daily_records.business_date", rangeStart)
+      .lte("daily_records.business_date", rangeEnd)
+      .order("id")
+      .range(from, to),
+  );
+
+  const byName = new Map<string, Map<string, number>>();
+  for (const c of data) {
     const dr = Array.isArray(c.daily_records) ? c.daily_records[0] : c.daily_records;
     const mk = dr.business_date.slice(0, 7);
     const name = c.counterparty as string;
@@ -655,25 +686,29 @@ export async function loadStaffTrend(
   const lastKeyDim = daysInMonth(keys[keys.length - 1] + "-01");
   const rangeEnd = `${keys[keys.length - 1]}-${String(lastKeyDim).padStart(2, "0")}`;
 
-  const [{ data: costs }, { data: staff }] = await Promise.all([
-    supabase
-      .from("daily_costs")
-      .select("amount, staff_id, daily_records!inner(store_id, business_date)")
-      .eq("daily_records.store_id", storeId)
-      .eq("cost_class", "labor")
-      .not("staff_id", "is", null)
-      .gte("daily_records.business_date", rangeStart)
-      .lte("daily_records.business_date", rangeEnd),
+  const [costs, { data: staff }] = await Promise.all([
+    fetchAllRows<{
+      amount: number;
+      staff_id: string | null;
+      daily_records: { business_date: string } | { business_date: string }[];
+    }>((from, to) =>
+      supabase
+        .from("daily_costs")
+        .select("amount, staff_id, daily_records!inner(store_id, business_date)")
+        .eq("daily_records.store_id", storeId)
+        .eq("cost_class", "labor")
+        .not("staff_id", "is", null)
+        .gte("daily_records.business_date", rangeStart)
+        .lte("daily_records.business_date", rangeEnd)
+        .order("id")
+        .range(from, to),
+    ),
     supabase.from("staff_members").select("id, name").eq("store_id", storeId),
   ]);
   const nameOf = new Map((staff ?? []).map((s) => [s.id, s.name]));
 
   const byId = new Map<string, Map<string, number>>();
-  for (const c of (costs ?? []) as {
-    amount: number;
-    staff_id: string | null;
-    daily_records: { business_date: string } | { business_date: string }[];
-  }[]) {
+  for (const c of costs) {
     const dr = Array.isArray(c.daily_records) ? c.daily_records[0] : c.daily_records;
     const mk = dr.business_date.slice(0, 7);
     const id = c.staff_id as string;
