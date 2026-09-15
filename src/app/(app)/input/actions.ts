@@ -32,6 +32,8 @@ export type SavePayload = {
     note?: string | null;
     counterparty?: string | null;
     paymentType?: "cash" | "credit";
+    ingredientId?: string | null;
+    quantity?: number | null;
   }[];
   receivables: {
     direction: "incurred" | "collected";
@@ -155,6 +157,8 @@ export async function saveDailyRecord(p: SavePayload): Promise<Result> {
       note: c.note?.trim() || null,
       counterparty: c.counterparty?.trim() || null,
       payment_type: c.paymentType ?? "cash",
+      ingredient_id: c.ingredientId || null,
+      quantity: c.quantity && c.quantity > 0 ? c.quantity : null,
       sort_order: i,
     }));
   if (castBackSum > 0) {
@@ -166,6 +170,8 @@ export async function saveDailyRecord(p: SavePayload): Promise<Result> {
       note: null,
       counterparty: null,
       payment_type: "cash",
+      ingredient_id: null,
+      quantity: null,
       sort_order: costRows.length,
     });
   }
@@ -214,6 +220,19 @@ export async function saveDailyRecord(p: SavePayload): Promise<Result> {
   const results = await Promise.all(inserts);
   const childErr = results.find((r) => r.error);
   if (childErr?.error) return { ok: false, error: childErr.error.message };
+
+  // 仕入れ明細で「食材＋数量」が分かるものは、その日の単価(金額÷数量)を
+  // 食材の単価履歴に反映する（レシピ原価の精度を上げるため）。
+  const priceRows = costRows
+    .filter((c) => c.cost_class === "cogs" && c.ingredient_id && c.quantity && c.quantity > 0)
+    .map((c) => ({
+      ingredient_id: c.ingredient_id as string,
+      business_date: p.businessDate,
+      unit_price: Math.round((c.amount / (c.quantity as number)) * 100) / 100,
+    }));
+  if (priceRows.length) {
+    await supabase.from("ingredient_prices").upsert(priceRows, { onConflict: "ingredient_id,business_date" });
+  }
 
   revalidatePath(`/input/${p.storeId}/${p.businessDate}`);
   revalidatePath("/dashboard");

@@ -26,6 +26,10 @@ const num = (s: string) => {
  const n = parseInt(String(s).replace(/[^0-9]/g, ""), 10);
  return Number.isFinite(n) && n > 0 ? n : 0;
 };
+const numF = (s: string) => {
+ const n = parseFloat(String(s).replace(/[^0-9.]/g, ""));
+ return Number.isFinite(n) && n > 0 ? n : 0;
+};
 const str = (n: number) => (n ? String(n) : "");
 
 type VarRow = {
@@ -42,6 +46,8 @@ type CogsRow = {
  vendorOther: string;
  amount: string;
  credit: boolean;
+ ingredientId: string;
+ quantity: string;
 };
 type RecvRow = { cp: string; amt: string };
 type CastRow = { name: string; nom: string; tbl: string; comp: string; back: string };
@@ -63,6 +69,7 @@ export default function DailyForm({
  variableItems,
  salesCategories,
  vendors,
+ ingredients,
  setupMonth,
  setupExists,
 }: {
@@ -78,6 +85,7 @@ export default function DailyForm({
  variableItems: string[];
  salesCategories: string[];
  vendors: string[];
+ ingredients: { id: string; name: string; unit: string }[];
  setupMonth: string;
  setupExists: boolean;
 }) {
@@ -129,7 +137,13 @@ export default function DailyForm({
  const [cogsDetail, setCogsDetail] = useState<CogsRow[]>(() =>
  initial.costs
  .filter((c) => c.cost_class === "cogs" && c.counterparty)
- .map((c) => ({ category: c.item, amount: str(c.amount), ...toVendorRow(c) })),
+ .map((c) => ({
+ category: c.item,
+ amount: str(c.amount),
+ ingredientId: c.ingredientId ?? "",
+ quantity: c.quantity ? String(c.quantity) : "",
+ ...toVendorRow(c),
+ })),
  );
  const [labor, setLabor] = useState<Record<string, string>>(() =>
  Object.fromEntries(LABOR_ITEMS.map((i) => [i, costOf("labor", i)])),
@@ -220,6 +234,8 @@ export default function DailyForm({
  amount: num(r.amount),
  counterparty: vendorOf(r) || null,
  paymentType: r.credit ? "credit" : "cash",
+ ingredientId: r.ingredientId || null,
+ quantity: numF(r.quantity) || null,
  });
  } else {
  for (const i of COGS_ITEMS)
@@ -614,6 +630,42 @@ export default function DailyForm({
  }}
  className={inputCls}
  />
+ {ingredients.length ? (
+ <>
+ <select
+ value={r.ingredientId}
+ onChange={(e) => {
+ const v = [...cogsDetail];
+ v[idx] = { ...r, ingredientId: e.target.value };
+ setCogsDetail(v);
+ }}
+ className="rounded-md border border-line bg-surface px-2 py-1 text-sm dark:bg-surface"
+ >
+ <option value="">食材（任意・単価記録用）</option>
+ {ingredients.map((ing) => (
+ <option key={ing.id} value={ing.id}>{ing.name}</option>
+ ))}
+ </select>
+ {r.ingredientId ? (
+ <>
+ <input
+ inputMode="decimal"
+ placeholder="数量"
+ value={r.quantity}
+ onChange={(e) => {
+ const v = [...cogsDetail];
+ v[idx] = { ...r, quantity: e.target.value };
+ setCogsDetail(v);
+ }}
+ className={inputCls + " w-20"}
+ />
+ <span className="text-xs text-muted">
+ {ingredients.find((ing) => ing.id === r.ingredientId)?.unit}
+ </span>
+ </>
+ ) : null}
+ </>
+ ) : null}
  <label className="flex items-center gap-1 text-xs text-muted">
  <input
  type="checkbox"
@@ -641,7 +693,7 @@ export default function DailyForm({
  onClick={() =>
  setCogsDetail([
  ...cogsDetail,
- { category: COGS_ITEMS[0], vendorSel: "", vendorOther: "", amount: "", credit: false },
+ { category: COGS_ITEMS[0], vendorSel: "", vendorOther: "", amount: "", credit: false, ingredientId: "", quantity: "" },
  ])
  }
  className="rounded-md border border-line px-3 py-1 text-sm"
@@ -650,6 +702,7 @@ export default function DailyForm({
  </button>
  <p className="text-xs text-muted">
  内訳を1件でも追加すると、上の「仕入 {COGS_ITEMS.join("・")}」は内訳の合計から自動計算されます（直接入力欄は消えます）。
+ {ingredients.length ? "「食材」と「数量」の両方が分かるときだけ入れると、金額÷数量でその日の単価が自動記録され、レシピ原価の精度が上がります（分からない日は空欄でOK）。" : ""}
  </p>
  </div>
  </details>

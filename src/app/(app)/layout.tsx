@@ -3,6 +3,7 @@ import { requireMembership, primaryRoleLabel, hasRole } from "@/lib/auth";
 import { signOut } from "@/app/login/actions";
 import { APP_NAME, APP_SUFFIX } from "@/lib/brand";
 import { loadBranding, brandingCss } from "@/lib/branding-server";
+import { createClient } from "@/lib/supabase/server";
 import { NavLink } from "./nav-link";
 
 export default async function AppLayout({
@@ -26,6 +27,11 @@ export default async function AppLayout({
   if (canWrite) {
     nav.push({ href: "/input", label: "日次入力" });
     nav.push({ href: "/setup", label: "月初セットアップ" });
+    const supabase = await createClient();
+    const { data: storeRows } = await supabase.from("stores").select("industry");
+    if ((storeRows ?? []).some((s) => s.industry === "restaurant")) {
+      nav.push({ href: "/recipes", label: "レシピ原価" });
+    }
     nav.push({ href: "/stores", label: "店舗" });
   }
   nav.push({ href: "/help", label: "使い方" });
